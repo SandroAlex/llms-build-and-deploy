@@ -1,0 +1,32 @@
+# Main Dockerfile for FastAPI development.
+FROM python:3.9-buster
+
+# Set working directory inside the container.
+WORKDIR /llm_app
+
+# Include python requirements.
+RUN mkdir -p /llm_app/requirements
+COPY ../requirements/requirements.fastapi.dev.txt /llm_app/requirements/requirements.fastapi.dev.txt
+
+# Prevents Python from writing pyc files to disc (equivalent to python -B option).
+ENV PYTHONDONTWRITEBYTECODE 1
+
+# Prevents Python from buffering stdout and stderr (equivalent to python -u option).
+ENV PYTHONUNBUFFERED 1
+
+# Ignore warning message from pip when installing packages as root.
+ENV PIP_ROOT_USER_ACTION=ignore
+
+# One line installation of zsh.
+# https://github.com/deluan/zsh-in-docker
+RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/v1.2.1/zsh-in-docker.sh)"
+
+# ZSH is now the default shell.
+SHELL ["/usr/bin/zsh", "-c"]
+
+# Install python requirements.
+RUN pip3 install --upgrade pip && \
+    pip3 install -r /llm_app/requirements/requirements.fastapi.dev.txt
+
+# Starts the FastAPI application in development mode.
+CMD [ "fastapi", "dev", "--host", "0.0.0.0", "--port", "8000" ]

@@ -1,0 +1,37 @@
+# Ignore build artifacts.
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Ignore development files.
+*.pyc
+*.pyo
+*.swp
+*.swo
+*.env
+
+# Ignore version control files.
+.git
+.svn
+.hg
+
+# Ignore editor-specific files.
+.vscode
+.idea
+*.sublime-project
+*.sublime-workspace
+
+# Docker files.
+.docker
+
+# Python files.
+app/__pycache__/
+app/*/__pycache__/
+app/*/*/__pycache__/
+app/*/*/*/__pycache__/
+.env/
+.venv/
+venv/

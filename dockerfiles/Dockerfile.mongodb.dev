@@ -1,0 +1,6 @@
+# Pull official base image for MongoDB.
+FROM mongo:latest
+
+# Set local timezone inside the container.
+ENV TZ=America/Sao_Paulo
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone

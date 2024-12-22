@@ -1,0 +1,6 @@
+# Pull official base image for RabbitMQ.
+FROM rabbitmq:3-management
+
+# Set local timezone.
+ENV TZ=America/Sao_Paulo
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
