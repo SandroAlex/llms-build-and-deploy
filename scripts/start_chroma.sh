@@ -11,4 +11,4 @@ set -o pipefail
 set -o nounset
 
 # Initialize the database API.
-uvicorn chroma.server:app --host 0.0.0.0 --port ${CHROMA_PORT}
+uvicorn chroma.server:app --host 0.0.0.0 --port 8878

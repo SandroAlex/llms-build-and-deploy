@@ -30,8 +30,6 @@ services:
       - ${CHROMA_PORT}:8878
     volumes:
       - .:/llm_app       
-    environment:
-      - CHROMA_PORT=${CHROMA_PORT}
     networks:
       - chroma_net
 
