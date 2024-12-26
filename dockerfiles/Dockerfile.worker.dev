@@ -39,7 +39,12 @@ RUN apt-get update --yes && \
 
 # Install python requirements.
 RUN pip3 install --upgrade pip && \
-    pip3 install torch==2.5.1+cpu torchaudio==2.5.1+cpu torchvision==0.20.1+cpu --index-url https://download.pytorch.org/whl/cpu && \
+    # Pytorch.
+    pip3 install --index-url https://download.pytorch.org/whl/cpu \
+    torch==2.5.1+cpu \
+    torchaudio==2.5.1+cpu \
+    torchvision==0.20.1+cpu && \
+    # Remaining dependencies.
     pip3 install -r /llm_app/requirements/requirements.worker.dev.txt
 
 # One line installation of zsh.
