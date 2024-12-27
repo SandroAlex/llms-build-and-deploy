@@ -100,3 +100,6 @@ venv.bak/
 
 # Database folders.
 databases/
+
+# Trained models.
+/models
