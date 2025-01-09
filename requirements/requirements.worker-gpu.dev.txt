@@ -98,6 +98,7 @@ psutil==6.1.1
 ptyprocess==0.7.0
 pure_eval==0.2.3
 pyarrow==17.0.0
+pycairo==1.26.1
 pycparser==2.22
 Pygments==2.18.0
 PyGObject==3.36.0
@@ -124,6 +125,7 @@ soupsieve==2.6
 stack-data==0.6.3
 terminado==0.18.1
 threadpoolctl==3.5.0
+tiktoken==0.7.0
 tinycss2==1.2.1
 tokenizers==0.13.3
 tomli==2.2.1
