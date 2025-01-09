@@ -131,6 +131,7 @@ tokenizers==0.13.3
 tomli==2.2.1
 torch==1.7.1+cu110
 torchaudio==0.7.2
+torchsummary==1.5.1
 torchvision==0.8.2+cu110
 tornado==6.4.2
 tqdm==4.67.1
