@@ -12,9 +12,11 @@ ifeq ($(DEVELOPMENT),true)
 	ifeq ($(USE_GPUS),true)
 		# Development environment with gpu support.
 		COMPOSE_FILE="docker-compose-gpu.dev.yaml"
+		WORKER_SERVICE="worker-service-gpu"
 	else
 		# Development environment without gpu support.
 		COMPOSE_FILE="docker-compose.dev.yaml"
+		WORKER_SERVICE="worker-service"
 	endif
 else
 	# Not implemented yet.
@@ -52,13 +54,13 @@ docker-logs:
 
 # Run jupyterlab on worker service.
 docker-exec-jupyterlab:
-	docker-compose --file ${COMPOSE_FILE} --project-name ${PROJECT_NAME} exec worker-service sh -c "jupyter-lab --allow-root --ip 0.0.0.0" ;
+	docker-compose --file ${COMPOSE_FILE} --project-name ${PROJECT_NAME} exec ${WORKER_SERVICE} sh -c "jupyter-lab --allow-root --ip 0.0.0.0" ;
 
 # Debug running worker container.
 docker-debug-worker-service:
-	docker-compose --file ${COMPOSE_FILE} --project-name ${PROJECT_NAME} exec worker-service sh -c "/usr/bin/zsh" ;
+	docker-compose --file ${COMPOSE_FILE} --project-name ${PROJECT_NAME} exec ${WORKER_SERVICE} sh -c "/usr/bin/zsh" ;
 
 # Debug running chroma database container.
 docker-debug-chroma-service:
-	docker-compose --file ${COMPOSE_FILE} --project-name ${PROJECT_NAME} exec chroma-service sh -c "/usr/bin/zsh" ;	
+	docker-compose --file ${COMPOSE_FILE} --project-name ${PROJECT_NAME} exec chroma-service sh -c "/usr/bin/zsh" ;
 #####################################################################
