@@ -27,25 +27,36 @@ RUN apt-get update && \
     apt-get install --yes \
     # Operational system dependencies.
     python3-dev \
+    python3-pip \
+    python3-dev \
+    python3-opencv \
+    libglib2.0-0 \
+    libcairo2-dev \
+    pkg-config \
     unzip \
     curl \
     wget \
     vim \
     vim-gtk3 && \
     # Cleaning up unused files.
-    # This folder contains cached package lists used by apt-get, and once the packages are installed, 
+    # This folder contains cached package lists used by apt-get, and once the packages are installed,
     # these lists are no longer needed. Removing them helps to keep the image smaller and more efficient.
     rm -rf /var/lib/apt/lists/*
 
-# Install python requirements.
-RUN pip3 install --upgrade pip && \
-    # Pytorch.
-    pip3 install --index-url https://download.pytorch.org/whl/cpu \
+# Avoid some errors in python packages installation.
+RUN pip3 install --upgrade \
+    pip \
+    setuptools \
+    wheel
+
+# Install torch.
+RUN pip3 install --index-url https://download.pytorch.org/whl/cpu \
     torch==2.5.1+cpu \
     torchaudio==2.5.1+cpu \
-    torchvision==0.20.1+cpu && \
-    # Remaining dependencies.
-    pip3 install -r /llm_app/requirements/requirements.worker.dev.txt
+    torchvision==0.20.1+cpu
+
+# Remaining dependencies.
+RUN pip3 install -r /llm_app/requirements/requirements.worker.dev.txt
 
 # One line installation of zsh.
 # https://github.com/deluan/zsh-in-docker
