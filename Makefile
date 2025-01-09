@@ -4,10 +4,18 @@ PROJECT_NAME="llms-project"
 # Environment used in building API: development (true) or production (false).
 DEVELOPMENT=true
 
+# Environment used in building API: with gpu support (true) or without gpu support (false).
+USE_GPUS=false
+
 # Select development or production docker compose file.
 ifeq ($(DEVELOPMENT),true)
-	# Development environment.
-	COMPOSE_FILE="docker-compose.dev.yaml"
+	ifeq ($(USE_GPUS),true)
+		# Development environment with gpu support.
+		COMPOSE_FILE="docker-compose-gpu.dev.yaml"
+	else
+		# Development environment without gpu support.
+		COMPOSE_FILE="docker-compose.dev.yaml"
+	endif
 else
 	# Not implemented yet.
 	COMPOSE_FILE="docker-compose.yaml"
@@ -30,6 +38,10 @@ docker-down-all:
 
 # DEBUG AND TESTS.
 #####################################################################
+# Show which compose file is being used.
+which-compose:
+	@echo ${COMPOSE_FILE} ;
+
 # Show a panoramic view of containers.
 docker-config:
 	docker-compose --file ${COMPOSE_FILE} --project-name ${PROJECT_NAME} config ;

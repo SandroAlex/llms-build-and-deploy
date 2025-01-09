@@ -49,16 +49,24 @@ services:
       - broker-service
       - database-service
 
-  # Hard worker service without GPU support.
-  worker-service:
+  # Hard worker service with GPU support.
+  worker-service-gpu:
     build:
       context: .
-      dockerfile: dockerfiles/Dockerfile.worker.dev
+      dockerfile: dockerfiles/Dockerfile.worker-gpu.dev
     ports:
       - ${JUPYTER_EXTERNAL_PORT}:8888      
     volumes:
       - .:/llm_app      
-    command: sleep infinity
+    # Override the default command to keep the container running.
+    entrypoint: sleep infinity
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
 # Networks configuration.
 networks:
