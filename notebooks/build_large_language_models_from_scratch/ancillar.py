@@ -11,14 +11,12 @@ class LayerNorm(nn.Module):
     """
 
     def __init__(self, emb_dim):
-
         super().__init__()
         self.eps = 1e-5
         self.scale = nn.Parameter(torch.ones(emb_dim))
         self.shift = nn.Parameter(torch.zeros(emb_dim))
 
     def forward(self, x):
-
         mean = x.mean(dim=-1, keepdim=True)
         var = x.var(dim=-1, keepdim=True, unbiased=False)
         norm_x = (x - mean) / torch.sqrt(var + self.eps)
@@ -33,14 +31,19 @@ class GELU(nn.Module):
     """
 
     def __init__(self):
-
         super().__init__()
 
     def forward(self, x):
-
-        gelu = 0.5 * x * (
-            1 + torch.tanh(torch.sqrt(torch.tensor(2.0 / 3.14)) * \
-            (x + 0.044715 * torch.pow(x, 3)))
+        gelu = (
+            0.5
+            * x
+            * (
+                1
+                + torch.tanh(
+                    torch.sqrt(torch.tensor(2.0 / 3.14))
+                    * (x + 0.044715 * torch.pow(x, 3))
+                )
+            )
         )
 
         return gelu
@@ -53,7 +56,6 @@ class FeedForward(nn.Module):
     """
 
     def __init__(self, cfg):
-
         super().__init__()
         self.layers = nn.Sequential(
             nn.Linear(cfg["emb_dim"], 4 * cfg["emb_dim"]),
@@ -62,7 +64,6 @@ class FeedForward(nn.Module):
         )
 
     def forward(self, x):
-
         return self.layers(x)
 
 
@@ -74,10 +75,10 @@ class MultiHeadAttention(nn.Module):
     """
 
     def __init__(self, d_in, d_out, context_length, dropout, num_heads, qkv_bias=False):
-
         super().__init__()
-        assert (d_out % num_heads == 0), \
-            f"d_out ({d_out}) must be divisible by num_heads ({num_heads})!"
+        assert (
+            d_out % num_heads == 0
+        ), f"d_out ({d_out}) must be divisible by num_heads ({num_heads})!"
 
         self.d_out = d_out
         self.num_heads = num_heads
@@ -95,11 +96,10 @@ class MultiHeadAttention(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.register_buffer(
             name="mask",
-            tensor=torch.triu(torch.ones(context_length, context_length), diagonal=1)
+            tensor=torch.triu(torch.ones(context_length, context_length), diagonal=1),
         )
 
     def forward(self, x):
-
         b, num_tokens, d_in = x.shape
         keys = self.W_key(x)
         queries = self.W_query(x)
@@ -155,7 +155,7 @@ class TransformerBlock(nn.Module):
             context_length=cfg["context_length"],
             num_heads=cfg["n_heads"],
             dropout=cfg["drop_rate"],
-            qkv_bias=cfg["qkv_bias"]
+            qkv_bias=cfg["qkv_bias"],
         )
 
         self.ff = FeedForward(cfg)
@@ -164,7 +164,6 @@ class TransformerBlock(nn.Module):
         self.drop_shortcut = nn.Dropout(cfg["drop_rate"])
 
     def forward(self, x):
-
         shortcut = x
         x = self.norm1(x)
         x = self.att(x)
@@ -187,7 +186,6 @@ class GPTModel(nn.Module):
     """
 
     def __init__(self, cfg):
-
         super().__init__()
 
         self.tok_emb = nn.Embedding(cfg["vocab_size"], cfg["emb_dim"])
@@ -200,7 +198,6 @@ class GPTModel(nn.Module):
         self.out_head = nn.Linear(cfg["emb_dim"], cfg["vocab_size"], bias=False)
 
     def forward(self, in_idx):
-
         # `in_idx`: batch of input token indices.
         # Batch size: `batch_size, seq_len = in_idx.shape`
         _, seq_len = in_idx.shape
@@ -227,19 +224,18 @@ def generate_text_simple(model, idx, max_new_tokens, context_size):
 
     # idx is (batch, n_tokens) array of indices in the current context.
     for _ in range(max_new_tokens):
-        
         # Crop current context if it exceeds the supported context size.
         # E.g., if LLM supports only 5 tokens, and the context size is 10
         # then only the last 5 tokens are used as context.
         idx_cond = idx[:, -context_size:]
-        
+
         # Get the predictions.
         with torch.no_grad():
             logits = model(idx_cond)
-        
+
         # Focus only on the last time step.
         # (batch, n_tokens, vocab_size) becomes (batch, vocab_size)
-        logits = logits[:, -1, :]  
+        logits = logits[:, -1, :]
 
         # Apply softmax to get probabilities.
         probas = torch.softmax(logits, dim=-1)  # (batch, vocab_size)
@@ -250,4 +246,4 @@ def generate_text_simple(model, idx, max_new_tokens, context_size):
         # Append sampled index to the running sequence.
         idx = torch.cat((idx, idx_next), dim=1)  # (batch, n_tokens + 1)
 
-    return idx        
+    return idx
