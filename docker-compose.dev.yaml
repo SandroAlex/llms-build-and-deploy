@@ -55,7 +55,9 @@ services:
       context: .
       dockerfile: dockerfiles/Dockerfile.worker.dev
     ports:
-      - ${JUPYTER_EXTERNAL_PORT}:8888      
+      - ${JUPYTER_EXTERNAL_PORT}:8888
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}      
     volumes:
       - .:/llm_app      
     command: sleep infinity
