@@ -106,3 +106,7 @@ databases/
 
 # Downloaded weights from OpenAI.
 gpt2/
+
+# Archifacts from code.
+loss-plot.pdf
+temperature-plot.pdf
