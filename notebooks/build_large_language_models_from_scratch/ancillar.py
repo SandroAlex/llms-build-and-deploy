@@ -1,34 +1,61 @@
 # Load packages.
-import torch
-import tiktoken
-
 import numpy as np
+import tiktoken
+import torch
 import torch.nn as nn
+from torch.utils.data import DataLoader, Dataset
 
-from torch.utils.data import Dataset, DataLoader
 
-
-###############################################################################
 class LayerNorm(nn.Module):
     """
-    Listing 4.2 A layer normalization class.
+    Layer normalization module.
+
+    Normalizes the input tensor across the last dimension for each sample in
+    the batch, then applies learnable scale and shift parameters. This helps
+    stabilize and accelerate training of deep neural networks.
     """
 
-    def __init__(self, emb_dim):
-        super().__init__()
-        self.eps = 1e-5
-        self.scale = nn.Parameter(torch.ones(emb_dim))
-        self.shift = nn.Parameter(torch.zeros(emb_dim))
+    def __init__(self, emb_dim: int) -> None:
+        """
+        Initialize the LayerNorm module.
 
-    def forward(self, x):
-        mean = x.mean(dim=-1, keepdim=True)
-        var = x.var(dim=-1, keepdim=True, unbiased=False)
-        norm_x = (x - mean) / torch.sqrt(var + self.eps)
+        Parameters
+        ----------
+        emb_dim : int
+            The size of the embedding dimension to normalize over.
+        """
+
+        # Initialize the parent class.
+        super().__init__()
+
+        # Define learnable parameters for scaling and shifting.
+        self.eps: float = 1e-5
+        self.scale: nn.Parameter = nn.Parameter(torch.ones(emb_dim))
+        self.shift: nn.Parameter = nn.Parameter(torch.zeros(emb_dim))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Apply layer normalization to the input tensor.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor of shape (..., emb_dim), where normalization is
+            performed over the last dimension.
+
+        Returns
+        -------
+        torch.Tensor
+            The normalized tensor with the same shape as the input, scaled and
+            shifted by learnable parameters.
+        """
+        mean: torch.Tensor = x.mean(dim=-1, keepdim=True)
+        var: torch.Tensor = x.var(dim=-1, keepdim=True, unbiased=False)
+        norm_x: torch.Tensor = (x - mean) / torch.sqrt(var + self.eps)
 
         return self.scale * norm_x + self.shift
 
 
-###############################################################################
 class GELU(nn.Module):
     """
     Listing 4.3: An implementation of the GELU activation function.
@@ -53,7 +80,6 @@ class GELU(nn.Module):
         return gelu
 
 
-###############################################################################
 class FeedForward(nn.Module):
     """
     Listing 4.4: A feed forward neural network module.
@@ -71,7 +97,6 @@ class FeedForward(nn.Module):
         return self.layers(x)
 
 
-###############################################################################
 class MultiHeadAttention(nn.Module):
     """
     From chapter 3.
@@ -145,7 +170,6 @@ class MultiHeadAttention(nn.Module):
         return context_vec
 
 
-###############################################################################
 class TransformerBlock(nn.Module):
     """
     Listing 4.6: The transformer block component of GPT.
@@ -183,44 +207,107 @@ class TransformerBlock(nn.Module):
         return x
 
 
-###############################################################################
 class GPTModel(nn.Module):
     """
-    Listing 4.7: The GPT model architecture implementation.
+    GPTModel implements a transformer-based language model for text generation.
+
+    This class includes token and positional embeddings, a stack of transformer
+    blocks, a final normalization layer, and an output projection head. It
+    supports forward inference for generating logits over the vocabulary.
     """
 
-    def __init__(self, cfg):
+    def __init__(self, cfg: dict) -> None:
+        """
+        Initialize the GPTModel.
+
+        Parameters
+        ----------
+        cfg : dict
+            Configuration dictionary containing model hyperparameters:
+            - vocab_size : int
+                Size of the vocabulary.
+            - emb_dim : int
+                Dimension of the embeddings.
+            - context_length : int
+                Maximum sequence length (context window).
+            - drop_rate : float
+                Dropout rate for regularization.
+            - n_heads : int
+                Number of attention heads.
+            - n_layers : int
+                Number of transformer blocks.
+            - qkv_bias : bool
+                Whether to use bias in QKV projections.
+        """
+
+        # Initialize the parent class.
         super().__init__()
 
-        self.tok_emb = nn.Embedding(cfg["vocab_size"], cfg["emb_dim"])
-        self.pos_emb = nn.Embedding(cfg["context_length"], cfg["emb_dim"])
-        self.drop_emb = nn.Dropout(cfg["drop_rate"])
-        self.trf_blocks = nn.Sequential(
+        self.tok_emb: nn.Embedding = nn.Embedding(cfg["vocab_size"], cfg["emb_dim"])
+        self.pos_emb: nn.Embedding = nn.Embedding(cfg["context_length"], cfg["emb_dim"])
+        self.drop_emb: nn.Dropout = nn.Dropout(cfg["drop_rate"])
+        self.trf_blocks: nn.Sequential = nn.Sequential(
             *[TransformerBlock(cfg) for _ in range(cfg["n_layers"])]
         )
-        self.final_norm = LayerNorm(cfg["emb_dim"])
-        self.out_head = nn.Linear(cfg["emb_dim"], cfg["vocab_size"], bias=False)
+        self.final_norm: LayerNorm = LayerNorm(cfg["emb_dim"])
+        self.out_head: nn.Linear = nn.Linear(
+            cfg["emb_dim"], cfg["vocab_size"], bias=False
+        )
 
-    def forward(self, in_idx):
-        # `in_idx`: batch of input token indices.
-        # Batch size: `batch_size, seq_len = in_idx.shape`
+    def forward(self, in_idx: torch.Tensor) -> torch.Tensor:
+        """
+        Perform a forward pass through the GPT model.
+
+        Parameters
+        ----------
+        in_idx : torch.Tensor
+            Input tensor of token indices with shape (batch_size, seq_len).
+
+        Returns
+        -------
+        torch.Tensor
+            Logits tensor of shape (batch_size, seq_len, vocab_size)
+            representing unnormalized probabilities for each token in the
+            vocabulary at each position in the sequence.
+        """
         _, seq_len = in_idx.shape
 
-        # The device setting will allow us to train the model on a CPU or GPU,
-        # depending on which device the input data sits on.
-        tok_embeds = self.tok_emb(in_idx)
-        pos_embeds = self.pos_emb(torch.arange(seq_len, device=in_idx.device))
-        x = tok_embeds + pos_embeds
+        tok_embeds: torch.Tensor = self.tok_emb(in_idx)
+        pos_embeds: torch.Tensor = self.pos_emb(
+            torch.arange(seq_len, device=in_idx.device)
+        )
+        x: torch.Tensor = tok_embeds + pos_embeds
         x = self.drop_emb(x)
         x = self.trf_blocks(x)
         x = self.final_norm(x)
 
-        logits = self.out_head(x)
+        logits: torch.Tensor = self.out_head(x)
 
         return logits
 
 
-###############################################################################
+# Listing 2.5 A dataset for batched inputs and targets.
+class GPTDatasetV1(Dataset):
+    def __init__(self, txt, tokenizer, max_length, stride):
+        self.input_ids = []
+        self.target_ids = []
+
+        # Tokenizes the entire text.
+        token_ids = tokenizer.encode(txt)
+
+        for i in range(0, len(token_ids) - max_length, stride):
+            input_chunk = token_ids[i : i + max_length]
+            target_chunk = token_ids[i + 1 : i + max_length + 1]
+            self.input_ids.append(torch.tensor(input_chunk))
+            self.target_ids.append(torch.tensor(target_chunk))
+
+    def __len__(self):
+        return len(self.input_ids)
+
+    def __getitem__(self, idx):
+        return self.input_ids[idx], self.target_ids[idx]
+
+
 def generate_text_simple(model, idx, max_new_tokens, context_size):
     """
     Listing 4.8: A function for the GPT model to generate text.
@@ -253,30 +340,6 @@ def generate_text_simple(model, idx, max_new_tokens, context_size):
     return idx
 
 
-###############################################################################
-# Listing 2.5 A dataset for batched inputs and targets.
-class GPTDatasetV1(Dataset):
-    def __init__(self, txt, tokenizer, max_length, stride):
-        self.input_ids = []
-        self.target_ids = []
-
-        # Tokenizes the entire text.
-        token_ids = tokenizer.encode(txt)
-
-        for i in range(0, len(token_ids) - max_length, stride):
-            input_chunk  = token_ids[i    : i + max_length]
-            target_chunk = token_ids[i + 1: i + max_length + 1]
-            self.input_ids.append(torch.tensor(input_chunk))
-            self.target_ids.append(torch.tensor(target_chunk))
-
-    def __len__(self):
-        return len(self.input_ids)
-
-    def __getitem__(self, idx):
-        return self.input_ids[idx], self.target_ids[idx]
-
-
-###############################################################################
 # Listing 2.6 A data loader to generate batches with input-with pairs.
 def create_dataloader_v1(
     txt,
@@ -285,7 +348,7 @@ def create_dataloader_v1(
     stride=128,
     shuffle=True,
     drop_last=True,
-    num_workers=0
+    num_workers=0,
 ):
     tokenizer = tiktoken.get_encoding("gpt2")
     dataset = GPTDatasetV1(txt, tokenizer, max_length, stride)
@@ -300,13 +363,12 @@ def create_dataloader_v1(
         batch_size=batch_size,
         shuffle=shuffle,
         drop_last=drop_last,
-        num_workers=num_workers
+        num_workers=num_workers,
     )
 
     return dataloader
 
 
-###############################################################################
 # Listing 5.1: Utility functions for text to token ID conversion.
 def text_to_token_ids(text, tokenizer):
 
@@ -318,7 +380,6 @@ def text_to_token_ids(text, tokenizer):
     return encoded_tensor
 
 
-###############################################################################
 # Listing 5.1: Utility functions for token to ID conversion.
 def token_ids_to_text(token_ids, tokenizer):
 
@@ -328,71 +389,82 @@ def token_ids_to_text(token_ids, tokenizer):
     return tokenizer.decode(flat.tolist())
 
 
-###############################################################################
 # Listing 5.5 Loading OpenAI weights into our GPT model code.
 def load_weights_into_gpt(gpt, params):
 
     def assign(left, right):
         if left.shape != right.shape:
-            raise ValueError(f"Shape mismatch. Left: {left.shape}, "
-                              "Right: {right.shape}"
+            raise ValueError(
+                f"Shape mismatch. Left: {left.shape}, " "Right: {right.shape}"
             )
         return torch.nn.Parameter(torch.tensor(right))
 
-    gpt.pos_emb.weight = assign(gpt.pos_emb.weight, params['wpe'])
-    gpt.tok_emb.weight = assign(gpt.tok_emb.weight, params['wte'])
+    gpt.pos_emb.weight = assign(gpt.pos_emb.weight, params["wpe"])
+    gpt.tok_emb.weight = assign(gpt.tok_emb.weight, params["wte"])
 
     for b in range(len(params["blocks"])):
-        q_w, k_w, v_w = np.split((params["blocks"][b]["attn"]["c_attn"])["w"], 3, axis=-1)
+        q_w, k_w, v_w = np.split(
+            (params["blocks"][b]["attn"]["c_attn"])["w"], 3, axis=-1
+        )
         gpt.trf_blocks[b].att.W_query.weight = assign(
-            gpt.trf_blocks[b].att.W_query.weight, q_w.T)
+            gpt.trf_blocks[b].att.W_query.weight, q_w.T
+        )
         gpt.trf_blocks[b].att.W_key.weight = assign(
-            gpt.trf_blocks[b].att.W_key.weight, k_w.T)
+            gpt.trf_blocks[b].att.W_key.weight, k_w.T
+        )
         gpt.trf_blocks[b].att.W_value.weight = assign(
-            gpt.trf_blocks[b].att.W_value.weight, v_w.T)
+            gpt.trf_blocks[b].att.W_value.weight, v_w.T
+        )
 
         q_b, k_b, v_b = np.split(
-            (params["blocks"][b]["attn"]["c_attn"])["b"], 3, axis=-1)
+            (params["blocks"][b]["attn"]["c_attn"])["b"], 3, axis=-1
+        )
         gpt.trf_blocks[b].att.W_query.bias = assign(
-            gpt.trf_blocks[b].att.W_query.bias, q_b)
-        gpt.trf_blocks[b].att.W_key.bias = assign(
-            gpt.trf_blocks[b].att.W_key.bias, k_b)
+            gpt.trf_blocks[b].att.W_query.bias, q_b
+        )
+        gpt.trf_blocks[b].att.W_key.bias = assign(gpt.trf_blocks[b].att.W_key.bias, k_b)
         gpt.trf_blocks[b].att.W_value.bias = assign(
-            gpt.trf_blocks[b].att.W_value.bias, v_b)
+            gpt.trf_blocks[b].att.W_value.bias, v_b
+        )
 
         gpt.trf_blocks[b].att.out_proj.weight = assign(
             gpt.trf_blocks[b].att.out_proj.weight,
-            params["blocks"][b]["attn"]["c_proj"]["w"].T)
+            params["blocks"][b]["attn"]["c_proj"]["w"].T,
+        )
         gpt.trf_blocks[b].att.out_proj.bias = assign(
             gpt.trf_blocks[b].att.out_proj.bias,
-            params["blocks"][b]["attn"]["c_proj"]["b"])
+            params["blocks"][b]["attn"]["c_proj"]["b"],
+        )
 
         gpt.trf_blocks[b].ff.layers[0].weight = assign(
             gpt.trf_blocks[b].ff.layers[0].weight,
-            params["blocks"][b]["mlp"]["c_fc"]["w"].T)
+            params["blocks"][b]["mlp"]["c_fc"]["w"].T,
+        )
         gpt.trf_blocks[b].ff.layers[0].bias = assign(
-            gpt.trf_blocks[b].ff.layers[0].bias,
-            params["blocks"][b]["mlp"]["c_fc"]["b"])
+            gpt.trf_blocks[b].ff.layers[0].bias, params["blocks"][b]["mlp"]["c_fc"]["b"]
+        )
         gpt.trf_blocks[b].ff.layers[2].weight = assign(
             gpt.trf_blocks[b].ff.layers[2].weight,
-            params["blocks"][b]["mlp"]["c_proj"]["w"].T)
+            params["blocks"][b]["mlp"]["c_proj"]["w"].T,
+        )
         gpt.trf_blocks[b].ff.layers[2].bias = assign(
             gpt.trf_blocks[b].ff.layers[2].bias,
-            params["blocks"][b]["mlp"]["c_proj"]["b"])
+            params["blocks"][b]["mlp"]["c_proj"]["b"],
+        )
 
         gpt.trf_blocks[b].norm1.scale = assign(
-            gpt.trf_blocks[b].norm1.scale,
-            params["blocks"][b]["ln_1"]["g"])
+            gpt.trf_blocks[b].norm1.scale, params["blocks"][b]["ln_1"]["g"]
+        )
         gpt.trf_blocks[b].norm1.shift = assign(
-            gpt.trf_blocks[b].norm1.shift,
-            params["blocks"][b]["ln_1"]["b"])
+            gpt.trf_blocks[b].norm1.shift, params["blocks"][b]["ln_1"]["b"]
+        )
         gpt.trf_blocks[b].norm2.scale = assign(
-            gpt.trf_blocks[b].norm2.scale,
-            params["blocks"][b]["ln_2"]["g"])
+            gpt.trf_blocks[b].norm2.scale, params["blocks"][b]["ln_2"]["g"]
+        )
         gpt.trf_blocks[b].norm2.shift = assign(
-            gpt.trf_blocks[b].norm2.shift,
-            params["blocks"][b]["ln_2"]["b"])
+            gpt.trf_blocks[b].norm2.shift, params["blocks"][b]["ln_2"]["b"]
+        )
 
     gpt.final_norm.scale = assign(gpt.final_norm.scale, params["g"])
     gpt.final_norm.shift = assign(gpt.final_norm.shift, params["b"])
-    gpt.out_head.weight = assign(gpt.out_head.weight, params["wte"])    
+    gpt.out_head.weight = assign(gpt.out_head.weight, params["wte"])
