@@ -254,8 +254,13 @@ class GPTModel(nn.Module):
             *[TransformerBlock(cfg) for _ in range(cfg["n_layers"])]
         )
         self.final_norm: LayerNorm = LayerNorm(cfg["emb_dim"])
+        
+        # Output head for predicting the next token in the sequence.
+        # Bias is set to False to avoid learning biases in the output layer.
         self.out_head: nn.Linear = nn.Linear(
-            cfg["emb_dim"], cfg["vocab_size"], bias=False
+            in_features=cfg["emb_dim"], 
+            out_features=cfg["vocab_size"], 
+            bias=False
         )
 
     def forward(self, in_idx: torch.Tensor) -> torch.Tensor:
