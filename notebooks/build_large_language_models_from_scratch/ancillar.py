@@ -243,8 +243,12 @@ class GPTModel(nn.Module):
         # Initialize the parent class.
         super().__init__()
 
-        self.tok_emb: nn.Embedding = nn.Embedding(cfg["vocab_size"], cfg["emb_dim"])
-        self.pos_emb: nn.Embedding = nn.Embedding(cfg["context_length"], cfg["emb_dim"])
+        self.tok_emb: nn.Embedding = nn.Embedding(
+            num_embeddings=cfg["vocab_size"], embedding_dim=cfg["emb_dim"]
+        )
+        self.pos_emb: nn.Embedding = nn.Embedding(
+            num_embeddings=cfg["context_length"], embedding_dim=cfg["emb_dim"]
+        )
         self.drop_emb: nn.Dropout = nn.Dropout(cfg["drop_rate"])
         self.trf_blocks: nn.Sequential = nn.Sequential(
             *[TransformerBlock(cfg) for _ in range(cfg["n_layers"])]
