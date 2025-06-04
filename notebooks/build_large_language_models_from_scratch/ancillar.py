@@ -1,5 +1,8 @@
 # Load packages.
+from typing import List
+
 import numpy as np
+import pandas as pd
 import tiktoken
 import torch
 import torch.nn as nn
@@ -254,13 +257,11 @@ class GPTModel(nn.Module):
             *[TransformerBlock(cfg) for _ in range(cfg["n_layers"])]
         )
         self.final_norm: LayerNorm = LayerNorm(cfg["emb_dim"])
-        
+
         # Output head for predicting the next token in the sequence.
         # Bias is set to False to avoid learning biases in the output layer.
         self.out_head: nn.Linear = nn.Linear(
-            in_features=cfg["emb_dim"], 
-            out_features=cfg["vocab_size"], 
-            bias=False
+            in_features=cfg["emb_dim"], out_features=cfg["vocab_size"], bias=False
         )
 
     def forward(self, in_idx: torch.Tensor) -> torch.Tensor:
@@ -295,6 +296,120 @@ class GPTModel(nn.Module):
         return logits
 
 
+# Listing 6.4 Setting up a Pytorch Dataset class.
+class SpamDataset(Dataset):
+    """
+    A PyTorch Dataset for loading and preprocessing spam classification data.
+
+    This dataset reads a CSV file containing text samples and their labels,
+    tokenizes the text using a provided tokenizer, and pads or truncates the
+    sequences to a fixed maximum length. Each item returned is a tuple of
+    (input_tensor, label_tensor).
+    """
+
+    def __init__(
+        self,
+        csv_file: str,
+        tokenizer: tiktoken.core.Encoding,
+        max_length: int | None = None,
+        pad_token_id: int = 50256,
+    ) -> None:
+        """
+        Initialize the SpamDataset.
+
+        Parameters
+        ----------
+        csv_file : str
+            Path to the CSV file containing the data. The file must have
+            columns "Text" and "Label".
+        tokenizer : tiktoken.core.Encoding
+            Tokenizer used to encode the text samples into token IDs.
+        max_length : int or None, optional
+            Maximum sequence length for each sample. If None, uses the length
+            of the longest sample in the dataset.
+        pad_token_id : int, optional
+            Token ID used for padding shorter sequences. Default is 50256.
+
+        Attributes
+        ----------
+        data : pd.DataFrame
+            DataFrame containing the loaded CSV data.
+        encoded_texts : list[list[int]]
+            List of tokenized and padded text samples.
+        max_length : int
+            Maximum sequence length for all samples.
+        """
+        self.data: pd.DataFrame = pd.read_csv(csv_file)
+        self.encoded_texts: List[List[int]] = [
+            tokenizer.encode(text) for text in self.data["Text"]
+        ]
+
+        if max_length is None:
+            self.max_length: int = self._longest_encoded_length()
+        else:
+            self.max_length: int = max_length
+            self.encoded_texts: List[List[int]] = [
+                encoded_text[: self.max_length] for encoded_text in self.encoded_texts
+            ]
+
+        self.encoded_texts: List[List[int]] = [
+            encoded_text + [pad_token_id] * (self.max_length - len(encoded_text))
+            for encoded_text in self.encoded_texts
+        ]
+
+    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Retrieve a single sample from the dataset.
+
+        Parameters
+        ----------
+        index : int
+            Index of the sample to retrieve.
+
+        Returns
+        -------
+        tuple[torch.Tensor, torch.Tensor]
+            A tuple containing:
+            - input_tensor : torch.Tensor
+                Tensor of token IDs with shape (max_length,).
+            - label_tensor : torch.Tensor
+                Tensor containing the label for the sample.
+        """
+        encoded: List[int] = self.encoded_texts[index]
+        label: int = self.data.iloc[index]["Label"]
+        return (
+            torch.tensor(encoded, dtype=torch.long),
+            torch.tensor(label, dtype=torch.long),
+        )
+
+    def __len__(self) -> int:
+        """
+        Return the number of samples in the dataset.
+
+        Returns
+        -------
+        int
+            The total number of samples.
+        """
+        return len(self.data)
+
+    def _longest_encoded_length(self) -> int:
+        """
+        Compute the length of the longest encoded text in the dataset.
+
+        Returns
+        -------
+        int
+            The maximum sequence length among all encoded texts.
+        """
+        max_length: int = 0
+        for encoded_text in self.encoded_texts:
+            encoded_length: int = len(encoded_text)
+            if encoded_length > max_length:
+                max_length = encoded_length
+        return max_length
+
+
 # Listing 2.5 A dataset for batched inputs and targets.
 class GPTDatasetV1(Dataset):
     def __init__(self, txt, tokenizer, max_length, stride):
@@ -317,10 +432,8 @@ class GPTDatasetV1(Dataset):
         return self.input_ids[idx], self.target_ids[idx]
 
 
+# Listing 4.8: A function for the GPT model to generate text.
 def generate_text_simple(model, idx, max_new_tokens, context_size):
-    """
-    Listing 4.8: A function for the GPT model to generate text.
-    """
 
     # idx is (batch, n_tokens) array of indices in the current context.
     for _ in range(max_new_tokens):
@@ -477,3 +590,128 @@ def load_weights_into_gpt(gpt, params):
     gpt.final_norm.scale = assign(gpt.final_norm.scale, params["g"])
     gpt.final_norm.shift = assign(gpt.final_norm.shift, params["b"])
     gpt.out_head.weight = assign(gpt.out_head.weight, params["wte"])
+
+
+# Listing 6.3 Splitting the dataset.
+def random_split(
+    df: pd.DataFrame, train_frac: float, validation_frac: float
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Split a DataFrame into train, validation, and test sets by fractions.
+
+    The function shuffles the input DataFrame and splits it into three
+    disjoint subsets: training, validation, and test sets, according to the
+    specified fractions. The test set receives the remaining data after
+    allocating the training and validation sets.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The input DataFrame to split.
+    train_frac : float
+        Fraction of the data to use for the training set. Must be in [0, 1].
+    validation_frac : float
+        Fraction of the data to use for the validation set. Must be in [0, 1].
+        The test set will contain the remaining samples.
+
+    Returns
+    -------
+    tuple of pd.DataFrame
+        A tuple containing (train_df, validation_df, test_df), where each is a
+        DataFrame corresponding to the respective split.
+
+    Notes
+    -----
+    The function uses a fixed random seed (123) for reproducibility.
+    The sum of train_frac and validation_frac should be less than or equal to 1.
+    """
+    # Shuffle the entire DataFrame.
+    df = df.sample(frac=1, random_state=123).reset_index(drop=True)
+
+    # Calculate split indices.
+    train_end: int = int(len(df) * train_frac)
+    validation_end: int = train_end + int(len(df) * validation_frac)
+
+    # Split the DataFrame.
+    train_df: pd.DataFrame = df[:train_end]
+    validation_df: pd.DataFrame = df[train_end:validation_end]
+    test_df: pd.DataFrame = df[validation_end:]
+
+    return train_df, validation_df, test_df
+
+
+# Listing 6.8 Calculating the classification accuracy.
+def calc_accuracy_loader(
+    data_loader: DataLoader,
+    model: nn.Module,
+    device: torch.device,
+    num_batches: int = None,
+) -> float:
+    """
+    Calculate the classification accuracy of a model over a data loader.
+
+    This function evaluates the model on batches from the provided data loader,
+    comparing the predicted labels to the target labels. It computes the
+    proportion of correct predictions over all evaluated examples. The
+    evaluation is performed without gradient computation and in evaluation mode.
+
+    Parameters
+    ----------
+    data_loader : DataLoader
+        A PyTorch DataLoader yielding batches of input and target tensors.
+    model : nn.Module
+        The neural network model to evaluate. Must output logits for each class.
+    device : torch.device
+        The device (CPU or CUDA) on which to perform computation.
+    num_batches : int, optional
+        The maximum number of batches to evaluate. If None, evaluates all
+        batches in the data loader.
+
+    Returns
+    -------
+    float
+        The classification accuracy as a float in the range [0, 1].
+
+    Notes
+    -----
+    - Assumes the model's output logits correspond to the last token in the
+      sequence for each input batch.
+    - The function does not update model parameters.
+    """
+
+    # Ensure the model is in evaluation mode.
+    model.eval()
+
+    # Initialize counters for correct predictions and total examples.
+    correct_predictions: int = 0
+    num_examples: int = 0
+
+    # If num_batches is None, use the full length of the data loader.
+    # Otherwise, limit to the specified number of batches.
+    if num_batches is None:
+        num_batches = len(data_loader)
+    else:
+        num_batches = min(num_batches, len(data_loader))
+
+    # Iterate over the data loader.
+    for i, (input_batch, target_batch) in enumerate(data_loader):
+        if i < num_batches:
+
+            input_batch: torch.Tensor = input_batch.to(device)
+            target_batch: torch.Tensor = target_batch.to(device)
+
+            # Forward pass through the model to get logits.
+            # Assumes the model outputs logits for the last token in the sequence
+            # and that the logits shape is (batch_size, seq_len, classification).
+            with torch.no_grad():
+                logits: torch.Tensor = model(input_batch)[:, -1, :]
+
+            predicted_labels: torch.Tensor = torch.argmax(logits, dim=-1)
+
+            num_examples += predicted_labels.shape[0]
+            correct_predictions += (predicted_labels == target_batch).sum().item()
+
+        else:
+            break
+
+    return correct_predictions / num_examples
