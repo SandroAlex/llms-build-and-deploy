@@ -715,3 +715,112 @@ def calc_accuracy_loader(
             break
 
     return correct_predictions / num_examples
+
+
+# Listing 6.8b Calculating the classification loss for a single batch.
+def calc_loss_batch(
+    input_batch: torch.Tensor,
+    target_batch: torch.Tensor,
+    model: nn.Module,
+    device: torch.device,
+) -> torch.Tensor:
+    """
+    Calculate cross-entropy loss for a batch of inputs and targets.
+
+    This function moves input and target tensors to the specified device, passes
+    the inputs through the model to get logits for the last position in the
+    sequence, and computes the cross-entropy loss against the target labels.
+
+    Parameters
+    ----------
+    input_batch : torch.Tensor
+        Input tensor of shape (batch_size, seq_len) containing token IDs.
+    target_batch : torch.Tensor
+        Target tensor of shape (batch_size,) containing class labels.
+    model : nn.Module
+        Neural network model that outputs logits for each token position.
+    device : torch.device
+        Device (CPU or CUDA) on which to perform computation.
+
+    Returns
+    -------
+    torch.Tensor
+        Scalar tensor containing the computed cross-entropy loss.
+
+    Notes
+    -----
+    - Assumes the model outputs a tensor of shape (batch_size, seq_len, n_classes);
+    - Only uses logits from the last token position for loss computation;
+    """
+
+    input_batch: torch.Tensor = input_batch.to(device)
+    target_batch: torch.Tensor = target_batch.to(device)
+
+    # Logits of last output token.
+    logits: torch.Tensor = model(input_batch)[:, -1, :]
+
+    loss: torch.Tensor = torch.nn.functional.cross_entropy(logits, target_batch)
+
+    return loss
+
+
+# Listing 6.9 Calculating the classification loss.
+def calc_loss_loader(
+    data_loader: DataLoader,
+    model: nn.Module,
+    device: torch.device,
+    num_batches: int = None,
+) -> float:
+    """
+    Calculate the average cross-entropy loss of a model over a data loader.
+
+    This function evaluates the model on batches from the provided data loader
+    and computes the average cross-entropy loss across all processed batches.
+    The evaluation is performed without gradient computation.
+
+    Parameters
+    ----------
+    data_loader : DataLoader
+        A PyTorch DataLoader yielding batches of input and target tensors.
+    model : nn.Module
+        The neural network model to evaluate. Must output logits for each class.
+    device : torch.device
+        The device (CPU or CUDA) on which to perform computation.
+    num_batches : int, optional
+        The maximum number of batches to evaluate. If None, evaluates all
+        batches in the data loader.
+
+    Returns
+    -------
+    float
+        The average cross-entropy loss across all processed batches. Returns NaN
+        if the data loader is empty.
+
+    Notes
+    -----
+    - Uses calc_loss_batch function to calculate loss for each individual batch
+    - Assumes the model outputs logits with shape (batch_size, seq_len, vocab_size)
+    - Only uses logits from the last token position for loss computation
+    """
+
+    # Initialize the loss accumulator.
+    total_loss: float = 0.0
+
+    # Get the number of batches in the data loader or in the specified limit.
+    if len(data_loader) == 0:
+        return float("nan")
+    elif num_batches is None:
+        num_batches: int = len(data_loader)
+    else:
+        num_batches: int = min(num_batches, len(data_loader))
+
+    for i, (input_batch, target_batch) in enumerate(data_loader):
+        if i < num_batches:
+            loss: torch.Tensor = calc_loss_batch(
+                input_batch, target_batch, model, device
+            )
+            total_loss += loss.item()
+        else:
+            break
+
+    return total_loss / num_batches
