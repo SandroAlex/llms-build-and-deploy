@@ -824,3 +824,178 @@ def calc_loss_loader(
             break
 
     return total_loss / num_batches
+
+
+# Listing 6.10 Fine-tuning the model to classify spam.
+def train_classifier_simple(
+    model: nn.Module,
+    train_loader: DataLoader,
+    val_loader: DataLoader,
+    optimizer: torch.optim.Optimizer,
+    device: torch.device,
+    num_epochs: int,
+    eval_freq: int,
+    eval_iter: int,
+) -> tuple[list[float], list[float], list[float], list[float], int]:
+    """
+    Train a classification model using the provided data loaders and optimizer.
+
+    This function performs training over several epochs, periodically evaluates
+    the model on training and validation data, and tracks loss and accuracy.
+
+    Parameters
+    ----------
+    model : nn.Module
+        The neural network model to train.
+    train_loader : DataLoader
+        DataLoader for the training dataset.
+    val_loader : DataLoader
+        DataLoader for the validation dataset.
+    optimizer : torch.optim.Optimizer
+        Optimizer for updating model parameters.
+    device : torch.device
+        Device (CPU or CUDA) for computation.
+    num_epochs : int
+        Number of epochs to train the model.
+    eval_freq : int
+        Frequency (in steps) to evaluate and record loss.
+    eval_iter : int
+        Number of batches to use for evaluation.
+
+    Returns
+    -------
+    tuple of lists and int
+        Tuple containing:
+        - train_losses : list of float
+            Recorded training losses at evaluation steps.
+        - val_losses : list of float
+            Recorded validation losses at evaluation steps.
+        - train_accs : list of float
+            Training accuracies after each epoch.
+        - val_accs : list of float
+            Validation accuracies after each epoch.
+        - examples_seen : int
+            Total number of training examples processed.
+
+    Notes
+    -----
+    - Uses calc_loss_batch for loss computation.
+    - Uses calc_accuracy_loader for accuracy computation.
+    - Calls evaluate_model for periodic evaluation.
+    """
+
+    # Initialize lists to track losses and examples seen
+    train_losses, val_losses, train_accs, val_accs = [], [], [], []
+    examples_seen, global_step = 0, -1
+
+    # Main training loop.
+    for epoch in range(num_epochs):
+
+        # Set model to training mode.
+        model.train()
+
+        # Loop over batches in the training data loader.
+        for input_batch, target_batch in train_loader:
+
+            # Reset loss gradients from previous batch iteration.
+            optimizer.zero_grad()
+            loss: torch.Tensor = calc_loss_batch(
+                input_batch, target_batch, model, device
+            )
+
+            # Calculate loss gradients.
+            loss.backward()
+
+            # Update model weights using loss gradients.
+            optimizer.step()
+
+            # Track examples.
+            examples_seen += input_batch.shape[0]
+
+            global_step += 1
+
+            # Optional evaluation step.
+            if global_step % eval_freq == 0:
+                train_loss, val_loss = evaluate_model(
+                    model, train_loader, val_loader, device, eval_iter
+                )
+                train_losses.append(train_loss)
+                val_losses.append(val_loss)
+                print(
+                    f">>> Ep {epoch + 1} (Step {global_step: 06d}): "
+                    f"Train loss {train_loss:.3f}, Val loss {val_loss:.3f}"
+                )
+
+        # Calculate accuracy after each epoch.
+        train_accuracy: float = calc_accuracy_loader(
+            train_loader, model, device, num_batches=eval_iter
+        )
+        val_accuracy: float = calc_accuracy_loader(
+            val_loader, model, device, num_batches=eval_iter
+        )
+
+        print(f">>> Training accuracy: {train_accuracy * 100: .2f}% | ", end="")
+        print(f"Validation accuracy: {val_accuracy * 100: .2f}%")
+
+        train_accs.append(train_accuracy)
+        val_accs.append(val_accuracy)
+
+    return train_losses, val_losses, train_accs, val_accs, examples_seen
+
+
+# Listing 6.10b part of the previous function.
+def evaluate_model(
+    model: nn.Module,
+    train_loader: DataLoader,
+    val_loader: DataLoader,
+    device: torch.device,
+    eval_iter: int,
+) -> tuple[float, float]:
+    """
+    Evaluate the model on training and validation data loaders.
+
+    This function computes the average loss on both the training and validation
+    sets using a fixed number of batches. The model is set to evaluation mode
+    during loss computation and returned to training mode after.
+
+    Parameters
+    ----------
+    model : nn.Module
+        The neural network model to evaluate.
+    train_loader : DataLoader
+        DataLoader for the training dataset.
+    val_loader : DataLoader
+        DataLoader for the validation dataset.
+    device : torch.device
+        Device (CPU or CUDA) for computation.
+    eval_iter : int
+        Number of batches to use for evaluation.
+
+    Returns
+    -------
+    tuple of float
+        Tuple containing:
+        - train_loss : float
+            Average loss on the training set.
+        - val_loss : float
+            Average loss on the validation set.
+
+    Notes
+    -----
+    - Uses calc_loss_loader to compute average loss for each loader.
+    - Model is set to eval mode during evaluation and restored to train mode.
+    """
+
+    model.eval()
+
+    with torch.no_grad():
+        train_loss: float = calc_loss_loader(
+            train_loader, model, device, num_batches=eval_iter
+        )
+        val_loss: float = calc_loss_loader(
+            val_loader, model, device, num_batches=eval_iter
+        )
+
+    model.train()
+
+    return train_loss, val_loss
