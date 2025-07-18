@@ -999,3 +999,87 @@ def evaluate_model(
     model.train()
 
     return train_loss, val_loss
+
+
+# Listing 6.12 Using the model to classify new texts.
+def classify_review(
+    text: str,
+    model: nn.Module,
+    tokenizer: tiktoken.core.Encoding,
+    device: torch.device,
+    max_length: int | None = None,
+    pad_token_id: int = 50256,
+) -> str:
+    """
+    Classify a text review as spam or not spam using a fine-tuned GPT model.
+
+    This function tokenizes the input text, prepares it for model inference by
+    truncating and padding as necessary, and uses the model's classification
+    head to predict whether the text is spam. The function handles sequence
+    length constraints and ensures proper formatting for the model.
+
+    Parameters
+    ----------
+    text : str
+        The input text to classify. Can be any length, but will be truncated
+        to max_length if longer than the specified limit.
+    model : nn.Module
+        A fine-tuned GPT model with a classification head. Must have a
+        pos_emb attribute for positional embeddings and output logits for
+        binary classification (0: not spam, 1: spam).
+    tokenizer : tiktoken.core.Encoding
+        The tokenizer used to encode the input text into token IDs. Must be
+        compatible with the model's vocabulary.
+    device : torch.device
+        The device (CPU or CUDA) on which the model and tensors should be
+        placed for computation.
+    max_length : int or None, optional
+        Maximum sequence length for the input. 
+    pad_token_id : int, optional
+        Token ID used for padding sequences shorter than max_length.
+        Default is 50256 (GPT-2's end-of-text token).
+
+    Returns
+    -------
+    str
+        Classification result as a string: either "spam" or "not spam".
+
+    Notes
+    -----
+    - The function sets the model to evaluation mode and uses torch.no_grad()
+      for inference to improve performance and reduce memory usage.
+    - Only the logits from the last token position are used for classification,
+      following the typical approach for sequence classification with GPT.
+    - Input sequences longer than max_length are truncated from the end.
+    - Input sequences shorter than max_length are padded with pad_token_id.
+    """
+
+    # Ensure the model is in evaluation mode.
+    model.eval()
+
+    # Prepare inputs to the model.
+    input_ids: list[int] = tokenizer.encode(text)
+
+    # Note: In the book, this was originally written as pos_emb.weight.shape[1]
+    # by mistake. It didn't break the code but would have caused unnecessary
+    # truncation (to 768 instead of 1024).
+    supported_context_length: int = model.pos_emb.weight.shape[0]
+    
+    # Truncate sequences if they are too long.
+    input_ids = input_ids[:min(max_length, supported_context_length)]
+    
+    # Pad sequences to the specified max_length.
+    input_ids += [pad_token_id] * (max_length - len(input_ids))
+    input_tensor: torch.Tensor = torch.tensor(
+        input_ids, device=device
+    ).unsqueeze(0)  # Add batch dimension.
+
+    # Model inference.
+    with torch.no_grad():
+        logits: torch.Tensor = model(input_tensor)[
+            :, -1, :
+        ]  # Logits of the last output token.
+    predicted_label: int = torch.argmax(logits, dim=-1).item()
+
+    # Return the classified result
+    return "spam" if predicted_label == 1 else "not spam"
