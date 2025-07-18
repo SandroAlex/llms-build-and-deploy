@@ -1,4 +1,7 @@
 # Load packages.
+import json
+import os
+import urllib
 from typing import List
 
 import numpy as np
@@ -1034,7 +1037,7 @@ def classify_review(
         The device (CPU or CUDA) on which the model and tensors should be
         placed for computation.
     max_length : int or None, optional
-        Maximum sequence length for the input. 
+        Maximum sequence length for the input.
     pad_token_id : int, optional
         Token ID used for padding sequences shorter than max_length.
         Default is 50256 (GPT-2's end-of-text token).
@@ -1064,15 +1067,15 @@ def classify_review(
     # by mistake. It didn't break the code but would have caused unnecessary
     # truncation (to 768 instead of 1024).
     supported_context_length: int = model.pos_emb.weight.shape[0]
-    
+
     # Truncate sequences if they are too long.
-    input_ids = input_ids[:min(max_length, supported_context_length)]
-    
+    input_ids = input_ids[: min(max_length, supported_context_length)]
+
     # Pad sequences to the specified max_length.
     input_ids += [pad_token_id] * (max_length - len(input_ids))
-    input_tensor: torch.Tensor = torch.tensor(
-        input_ids, device=device
-    ).unsqueeze(0)  # Add batch dimension.
+    input_tensor: torch.Tensor = torch.tensor(input_ids, device=device).unsqueeze(
+        0
+    )  # Add batch dimension.
 
     # Model inference.
     with torch.no_grad():
@@ -1083,3 +1086,78 @@ def classify_review(
 
     # Return the classified result
     return "spam" if predicted_label == 1 else "not spam"
+
+
+# Listing 7.1 Downloading the dataset.
+def download_and_load_file(file_path: str, url: str) -> dict:
+    """
+    Download a file from a URL if not present and load its JSON content.
+
+    This function checks if the file exists locally. If not, it downloads the
+    file from the specified URL and saves it. Then, it loads and returns the
+    file's content as a Python dictionary.
+
+    Parameters
+    ----------
+    file_path : str
+        Path to the local file to check or save the downloaded content.
+    url : str
+        URL to download the file from if it does not exist locally.
+
+    Returns
+    -------
+    dict
+        The loaded JSON content as a Python dictionary.
+
+    Notes
+    -----
+    - Assumes the file content is in JSON format.
+    - Uses UTF-8 encoding for reading and writing files.
+    - Overwrites the file if it is downloaded.
+    """
+    if not os.path.exists(file_path):
+        with urllib.request.urlopen(url) as response:
+            text_data: str = response.read().decode("utf-8")
+        with open(file_path, "w", encoding="utf-8") as file:
+            file.write(text_data)
+
+    with open(file_path, "r", encoding="utf-8") as file:
+        data: dict = json.load(file)
+
+    return data
+
+
+# Listing 7.2 Implementing the prompt formatting function (Alpaca-style input format).
+def format_input(entry: dict) -> str:
+    """
+    Format a prompt entry using Alpaca-style input format.
+
+    This function takes a dictionary containing 'instruction' and 'input'
+    fields and returns a formatted string suitable for prompt-based models.
+
+    Parameters
+    ----------
+    entry : dict
+        Dictionary with keys:
+        - 'instruction' : str
+            The instruction describing the task.
+        - 'input' : str
+            Optional input for the instruction.
+
+    Returns
+    -------
+    str
+        Formatted prompt string combining instruction and input.
+
+    Notes
+    -----
+    - If 'input' is empty, only the instruction is included.
+    - The output follows the Alpaca prompt format.
+    """
+    instruction_text: str = (
+        f"Below is an instruction that describes a task. "
+        f"Write a response that appropriately completes the request."
+        f"\n\n### Instruction:\n{entry['instruction']}"
+    )
+    input_text: str = f"\n\n### Input:\n{entry['input']}" if entry["input"] else ""
+    return instruction_text + input_text
