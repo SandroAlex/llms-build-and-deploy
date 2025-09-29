@@ -2,7 +2,7 @@
 import json
 import os
 import urllib
-from typing import List
+from typing import Dict, List
 
 import numpy as np
 import pandas as pd
@@ -1128,7 +1128,7 @@ def download_and_load_file(file_path: str, url: str) -> dict:
 
 
 # Listing 7.2 Implementing the prompt formatting function (Alpaca-style input format).
-def format_input(entry: dict) -> str:
+def format_input(entry: Dict[str, str]) -> str:
     """
     Format a prompt entry using Alpaca-style input format.
 
@@ -1161,3 +1161,206 @@ def format_input(entry: dict) -> str:
     )
     input_text: str = f"\n\n### Input:\n{entry['input']}" if entry["input"] else ""
     return instruction_text + input_text
+
+
+# Listing 7.4 Implementing an instruction dataset class.
+class InstructionDataset(Dataset):
+    """
+    A PyTorch Dataset for loading and preprocessing instruction-following data.
+
+    This dataset processes instruction-response pairs by formatting them using
+    the Alpaca prompt template and tokenizing the complete text sequences. Each
+    sample contains an instruction, optional input, and expected response that
+    are combined into a single training sequence for instruction fine-tuning.
+
+    Attributes
+    ----------
+    data : list[dict[str, str]]
+        List of dictionaries containing instruction data with 'instruction',
+        'input', and 'output' keys.
+    encoded_texts : list[list[int]]
+        List of tokenized text sequences, where each sequence represents a
+        complete instruction-response pair encoded as token IDs.
+    """
+
+    def __init__(
+        self,
+        data: List[Dict[str, str]],
+        tokenizer: tiktoken.core.Encoding,
+    ) -> None:
+        """
+        Initialize the InstructionDataset.
+
+        This method processes the input data by formatting each entry using the
+        Alpaca prompt template and tokenizing the complete instruction-response
+        sequences. The formatted text combines the instruction, optional input,
+        and response into a single training sequence.
+
+        Parameters
+        ----------
+        data : list[dict[str, str]]
+            List of dictionaries where each dictionary contains:
+            - 'instruction' : str
+                The task instruction describing what needs to be done.
+            - 'input' : str
+                Optional input context for the instruction. Can be empty.
+            - 'output' : str
+                The expected response or completion for the instruction.
+        tokenizer : tiktoken.core.Encoding
+            Tokenizer used to encode the formatted text into token IDs.
+            Must be compatible with the model's vocabulary.
+
+        Notes
+        -----
+        - Each entry is formatted using the Alpaca prompt template via the
+          format_input function.
+        - The complete text sequence includes instruction, input (if present),
+          and response sections.
+        - All text sequences are pre-tokenized during initialization for
+          efficiency during training.
+        """
+        # Main parameters.
+        self.data: List[Dict[str, str]] = data
+        self.encoded_texts: List[List[int]] = []
+
+        # Pretokenizes all texts.
+        for entry in data:
+            instruction_plus_input: str = format_input(entry=entry)
+            response_text: str = f"\n\n### Response:\n{entry['output']}"
+            full_text: str = instruction_plus_input + response_text
+
+            self.encoded_texts.append(tokenizer.encode(full_text))
+
+    def __getitem__(self, index: int) -> List[int]:
+        """
+        Retrieve a single tokenized sequence from the dataset.
+
+        Parameters
+        ----------
+        index : int
+            Index of the sample to retrieve. Must be in the range
+            [0, len(dataset)).
+
+        Returns
+        -------
+        list[int]
+            A list of token IDs representing the complete instruction-response
+            sequence at the specified index. The sequence includes the
+            formatted instruction, optional input, and expected response.
+
+        Raises
+        ------
+        IndexError
+            If the index is out of bounds for the dataset.
+
+        Notes
+        -----
+        - The returned sequence is already tokenized and ready for model input.
+        - Each sequence may have different lengths depending on the content
+          of the instruction and response.
+        """
+        return self.encoded_texts[index]
+
+    def __len__(self) -> int:
+        """
+        Return the number of instruction-response pairs in the dataset.
+
+        Returns
+        -------
+        int
+            The total number of samples in the dataset, corresponding to the
+            number of instruction-response pairs provided during initialization.
+
+        Notes
+        -----
+        - This method is required by PyTorch's Dataset interface.
+        - The length corresponds to the number of entries in the original
+          data list.
+        """
+        return len(self.data)
+
+
+def custom_collate_draft_1(
+    batch: List[List[int]],
+    pad_token_id: int = 50256,
+    device: str = "cpu"
+) -> torch.Tensor:
+    """
+    Custom collate function for batching variable-length token sequences.
+
+    This function processes a batch of tokenized sequences with different
+    lengths by padding them to a uniform length and preparing them for
+    model training. Each sequence is padded with a specified token ID and
+    converted to a tensor format suitable for PyTorch models.
+
+    The function adds an extra padding token to each sequence, determines
+    the maximum length needed for the batch, pads all sequences to this
+    length, and then removes the last token to create input sequences of
+    consistent length.
+
+    Parameters
+    ----------
+    batch : list[list[int]]
+        List of tokenized sequences where each inner list contains token IDs
+        for a single sample. Sequences can have different lengths.
+    pad_token_id : int, optional
+        Token ID used for padding shorter sequences to match the batch's
+        maximum length. Default is 50256 (GPT-2's end-of-text token).
+    device : str, optional
+        Target device for the output tensor. Can be "cpu", "cuda", or other
+        PyTorch device specifications. Default is "cpu".
+
+    Returns
+    -------
+    torch.Tensor
+        A 2D tensor of shape (batch_size, max_seq_len - 1) containing the
+        padded input sequences. Each row represents one sample from the
+        batch, padded to the same length and ready for model input.
+
+    Notes
+    -----
+    - The function adds one padding token to each sequence before determining
+      the maximum length, then removes the last token from each padded
+      sequence. This pattern is commonly used in language modeling where
+      input and target sequences are offset by one position.
+    - All sequences in the output tensor have the same length, determined by
+      the longest sequence in the batch plus one padding token, minus one
+      for the final truncation.
+    - The output tensor is automatically moved to the specified device.
+
+    Examples
+    --------
+    >>> batch = [[1, 2, 3], [4, 5], [6, 7, 8, 9]]
+    >>> result = custom_collate_draft_1(batch, pad_token_id=0)
+    >>> print(result.shape)
+    torch.Size([3, 4])
+    >>> print(result)
+    tensor([[1, 2, 3, 0],
+            [4, 5, 0, 0],
+            [6, 7, 8, 9]])
+    """
+
+    # Determine the maximum length of the batch.
+    batch_max_length: int = max(len(item) + 1 for item in batch)
+    inputs_lst: List[torch.Tensor] = []
+    
+    # Pad and prepares each item in the batch.
+    for item in batch:
+        
+        new_item: List[int] = item.copy()
+        new_item += [pad_token_id]
+        
+        padded: List[int] = (
+            new_item + [pad_token_id] * (batch_max_length - len(new_item))
+        )
+        
+        # Removes extra padded token added earlier.
+        inputs: torch.Tensor = torch.tensor(padded[:-1])
+        
+        inputs_lst.append(inputs)
+    
+    # Converts the list of inputs to a tensor and transfers it to the target 
+    # device.
+    inputs_tensor: torch.Tensor = torch.stack(inputs_lst).to(device)
+
+    return inputs_tensor

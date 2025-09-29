@@ -1,4 +1,4 @@
-# Base image for all agrilearn ecosystem (Python 3.10.12).
+# Base image for our worker (Python 3.10.12).
 FROM ubuntu:22.04
 
 # It sets up a user with specific UID and GID to avoid
@@ -6,7 +6,7 @@ FROM ubuntu:22.04
 # The user is created with the same UID and GID as the host user, which allows for
 # seamless file sharing between the host and the container without permission conflicts.
 ARG USER_NAME=worker-user
-ARG USER_PASSWORD=ec2-user
+ARG USER_PASSWORD=worker-user
 ARG USER_UID=1000
 ARG USER_GID=1000
 
