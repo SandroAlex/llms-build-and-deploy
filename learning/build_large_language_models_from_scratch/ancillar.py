@@ -1281,9 +1281,7 @@ class InstructionDataset(Dataset):
 
 
 def custom_collate_draft_1(
-    batch: List[List[int]],
-    pad_token_id: int = 50256,
-    device: str = "cpu"
+    batch: List[List[int]], pad_token_id: int = 50256, device: str = "cpu"
 ) -> torch.Tensor:
     """
     Custom collate function for batching variable-length token sequences.
@@ -1343,24 +1341,262 @@ def custom_collate_draft_1(
     # Determine the maximum length of the batch.
     batch_max_length: int = max(len(item) + 1 for item in batch)
     inputs_lst: List[torch.Tensor] = []
-    
+
     # Pad and prepares each item in the batch.
     for item in batch:
-        
+
         new_item: List[int] = item.copy()
         new_item += [pad_token_id]
-        
-        padded: List[int] = (
-            new_item + [pad_token_id] * (batch_max_length - len(new_item))
+
+        padded: List[int] = new_item + [pad_token_id] * (
+            batch_max_length - len(new_item)
         )
-        
+
         # Removes extra padded token added earlier.
         inputs: torch.Tensor = torch.tensor(padded[:-1])
-        
+
         inputs_lst.append(inputs)
-    
-    # Converts the list of inputs to a tensor and transfers it to the target 
+
+    # Converts the list of inputs to a tensor and transfers it to the target
     # device.
     inputs_tensor: torch.Tensor = torch.stack(inputs_lst).to(device)
 
     return inputs_tensor
+
+
+def custom_collate_draft_2(
+    batch: List[List[int]], pad_token_id: int = 50256, device: str = "cpu"
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Custom collate function for batching sequences with input-target pairs.
+
+    This function processes a batch of tokenized sequences by padding them to
+    uniform length and creating input-target pairs for language modeling. The
+    function prepares sequences where targets are shifted one position to the
+    right relative to inputs, which is the standard approach for autoregressive
+    language model training.
+
+    Each sequence is padded with an end-of-text token, then padded to the batch's
+    maximum length. Input sequences exclude the final token, while target
+    sequences exclude the first token, creating the necessary offset for
+    next-token prediction training.
+
+    Parameters
+    ----------
+    batch : list[list[int]]
+        List of tokenized sequences where each inner list contains token IDs
+        for a single sample. Sequences can have different lengths.
+    pad_token_id : int, optional
+        Token ID used for padding shorter sequences and as end-of-text marker.
+        Default is 50256 (GPT-2's end-of-text token).
+    device : str, optional
+        Target device for the output tensors. Can be "cpu", "cuda", or other
+        PyTorch device specifications. Default is "cpu".
+
+    Returns
+    -------
+    tuple[torch.Tensor, torch.Tensor]
+        A tuple containing:
+        - inputs_tensor : torch.Tensor
+            Input sequences of shape (batch_size, max_seq_len - 1) where each
+            sequence is padded to uniform length and ready for model input.
+        - targets_tensor : torch.Tensor
+            Target sequences of shape (batch_size, max_seq_len - 1) containing
+            the expected next tokens for each input position, shifted one
+            position to the right relative to inputs.
+
+    Notes
+    -----
+    - The function adds an end-of-text token to each sequence before padding
+      to ensure proper sequence termination.
+    - Input sequences are created by excluding the last token from padded
+      sequences (padded[:-1]).
+    - Target sequences are created by excluding the first token from padded
+      sequences (padded[1:]), creating the one-position shift needed for
+      next-token prediction.
+    - Both output tensors have the same shape and are moved to the specified
+      device for training compatibility.
+    - This pattern enables the model to learn to predict the next token given
+      the current context during autoregressive training.
+
+    Examples
+    --------
+    >>> batch = [[1, 2, 3], [4, 5], [6, 7, 8, 9]]
+    >>> inputs, targets = custom_collate_draft_2(batch, pad_token_id=0)
+    >>> print(inputs.shape, targets.shape)
+    torch.Size([3, 4]) torch.Size([3, 4])
+    >>> print("Inputs:", inputs)
+    tensor([[1, 2, 3, 0],
+            [4, 5, 0, 0],
+            [6, 7, 8, 9]])
+    >>> print("Targets:", targets)
+    tensor([[2, 3, 0, 0],
+            [5, 0, 0, 0],
+            [7, 8, 9, 0]])
+    """
+    # Find the longest sequence in the batch.
+    batch_max_length: int = max(len(item) + 1 for item in batch)
+
+    # Pad and prepare inputs.
+    inputs_lst: List[torch.Tensor] = []
+    targets_lst: List[torch.Tensor] = []
+
+    for item in batch:
+        new_item: List[int] = item.copy()
+
+        # Add an <|endoftext|> token.
+        new_item += [pad_token_id]
+
+        # Pad sequences to max_length.
+        padded: List[int] = new_item + [pad_token_id] * (
+            batch_max_length - len(new_item)
+        )
+
+        # Truncate the last token for inputs.
+        inputs: torch.Tensor = torch.tensor(padded[:-1])
+
+        # Shift +1 to the right for targets
+        targets: torch.Tensor = torch.tensor(padded[1:])
+
+        # Append results.
+        inputs_lst.append(inputs)
+        targets_lst.append(targets)
+
+    # Convert list of inputs to tensor and transfer to target device.
+    inputs_tensor: torch.Tensor = torch.stack(inputs_lst).to(device)
+    targets_tensor: torch.Tensor = torch.stack(targets_lst).to(device)
+
+    return inputs_tensor, targets_tensor
+
+
+# Listing 7.5 Implementing a custom batch collate function.
+def custom_collate_fn(
+    batch: List[List[int]],
+    pad_token_id: int = 50256,
+    ignore_index: int = -100,
+    allowed_max_length: int | None = None,
+    device: str = "cpu"
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Custom collate function with ignore index masking for instruction tuning.
+
+    This function processes a batch of tokenized sequences by padding them to
+    uniform length and creating input-target pairs for language modeling with
+    proper masking. The function prepares sequences where targets are shifted
+    one position to the right relative to inputs, and uses ignore_index to
+    mask padding tokens in targets to prevent the model from learning to
+    predict padding.
+
+    Each sequence is padded with an end-of-text token, then padded to the batch's
+    maximum length. Input sequences exclude the final token, while target
+    sequences exclude the first token. Crucially, all padding tokens in targets
+    except the first one are replaced with ignore_index, which prevents the
+    loss function from computing gradients for these positions.
+
+    Parameters
+    ----------
+    batch : list[list[int]]
+        List of tokenized sequences where each inner list contains token IDs
+        for a single sample. Sequences can have different lengths.
+    pad_token_id : int, optional
+        Token ID used for padding shorter sequences and as end-of-text marker.
+        Default is 50256 (GPT-2's end-of-text token).
+    ignore_index : int, optional
+        Special index used to mask padding tokens in target sequences. Loss
+        computation will ignore positions with this value. Default is -100,
+        which is the standard PyTorch ignore index for CrossEntropyLoss.
+    allowed_max_length : int or None, optional
+        Maximum sequence length to truncate inputs and targets. If None, uses
+        the natural batch maximum length. If specified, sequences longer than
+        this value will be truncated.
+    device : str, optional
+        Target device for the output tensors. Can be "cpu", "cuda", or other
+        PyTorch device specifications. Default is "cpu".
+
+    Returns
+    -------
+    tuple[torch.Tensor, torch.Tensor]
+        A tuple containing:
+        - inputs_tensor : torch.Tensor
+            Input sequences of shape (batch_size, seq_len) where each sequence
+            is padded to uniform length and ready for model input.
+        - targets_tensor : torch.Tensor
+            Target sequences of shape (batch_size, seq_len) containing the
+            expected next tokens for each input position, with padding tokens
+            (except the first) replaced by ignore_index.
+
+    Notes
+    -----
+    - The function adds an end-of-text token to each sequence before padding
+      to ensure proper sequence termination.
+    - Input sequences are created by excluding the last token from padded
+      sequences (padded[:-1]).
+    - Target sequences are created by excluding the first token from padded
+      sequences (padded[1:]), creating the one-position shift needed for
+      next-token prediction.
+    - The first padding token in targets is preserved to teach the model when
+      to stop generation, while subsequent padding tokens are masked with
+      ignore_index.
+    - This masking strategy is crucial for instruction fine-tuning where you
+      want the model to learn to generate proper end-of-sequence tokens but
+      not to predict arbitrary padding.
+    - Both output tensors have the same shape and are moved to the specified
+      device for training compatibility.
+
+    Examples
+    --------
+    >>> batch = [[1, 2, 3], [4, 5], [6, 7, 8, 9]]
+    >>> inputs, targets = custom_collate_fn(batch, pad_token_id=0, ignore_index=-100)
+    >>> print(inputs.shape, targets.shape)
+    torch.Size([3, 4]) torch.Size([3, 4])
+    >>> print("Inputs:", inputs)
+    tensor([[1, 2, 3, 0],
+            [4, 5, 0, 0],
+            [6, 7, 8, 9]])
+    >>> print("Targets:", targets)
+    tensor([[  2,   3,   0, -100],
+            [  5,   0, -100, -100],
+            [  7,   8,   9,    0]])
+    """
+    # Find the longest sequence in the batch
+    batch_max_length: int = max(len(item) + 1 for item in batch)
+
+    # Pad and prepare inputs and targets.
+    inputs_lst: List[torch.Tensor] = []
+    targets_lst: List[torch.Tensor] = []
+
+    for item in batch:
+        new_item: List[int] = item.copy()
+        
+        # Add an <|endoftext|> token.
+        new_item += [pad_token_id]
+        
+        # Pad sequences to max_length.
+        padded: List[int] = (
+            new_item + [pad_token_id] * (batch_max_length - len(new_item))
+        )
+
+        # Truncate the last token for inputs and shift +1 to the right for targets.
+        inputs: torch.Tensor = torch.tensor(padded[:-1]) 
+        targets: torch.Tensor = torch.tensor(padded[1:]) 
+
+        # Replace all but the first padding tokens in targets by ignore_index.
+        mask: torch.Tensor = targets == pad_token_id
+        indices: torch.Tensor = torch.nonzero(mask).squeeze()
+        
+        if indices.numel() > 1:
+            targets[indices[1:]] = ignore_index
+
+        # Optionally truncate to maximum sequence length.
+        if allowed_max_length is not None:
+            inputs = inputs[:allowed_max_length]
+            targets = targets[:allowed_max_length]
+
+        inputs_lst.append(inputs)
+        targets_lst.append(targets)
+
+    # Convert list of inputs and targets to tensors and transfer to target device.
+    inputs_tensor: torch.Tensor = torch.stack(inputs_lst).to(device)
+    targets_tensor: torch.Tensor = torch.stack(targets_lst).to(device)
+
+    return inputs_tensor, targets_tensor
