@@ -105,7 +105,7 @@ databases/
 /models
 
 # Downloaded weights from OpenAI.
-gpt2/
+gpt2-from-scratch/
 
 # Archifacts from code.
 loss-plot.pdf
