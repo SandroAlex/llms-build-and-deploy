@@ -514,6 +514,163 @@ def token_ids_to_text(token_ids, tokenizer):
     return tokenizer.decode(flat.tolist())
 
 
+# Listing 5.4 A modified text generation function with more diversity.
+def generate(
+    model: nn.Module,
+    idx: torch.Tensor,
+    max_new_tokens: int,
+    context_size: int,
+    temperature: float = 0.0,
+    top_k: int | None = None,
+    eos_id: int | None = None,
+    verbose: bool = False,
+) -> torch.Tensor:
+    """
+    Generate text tokens using a GPT model with temperature and top-k sampling.
+
+    This function performs autoregressive text generation by iteratively
+    predicting the next token based on the current context. It supports
+    temperature scaling for controlling randomness and top-k sampling for
+    limiting the vocabulary to the most likely tokens. Generation can be
+    terminated early if an end-of-sequence token is encountered.
+
+    Parameters
+    ----------
+    model : nn.Module
+        The GPT model used for text generation. Must output logits of shape
+        (batch_size, seq_len, vocab_size) when given input token indices.
+    idx : torch.Tensor
+        Initial input tensor of token indices with shape (batch_size, seq_len).
+        This provides the starting context for text generation.
+    max_new_tokens : int
+        Maximum number of new tokens to generate. The generation loop will
+        run for at most this many iterations unless terminated early by an
+        end-of-sequence token.
+    context_size : int
+        Maximum context length that the model can handle. Input sequences
+        longer than this will be truncated to the most recent context_size
+        tokens before being passed to the model.
+    temperature : float, optional
+        Temperature parameter for controlling randomness in token selection.
+        - temperature = 0.0: Deterministic selection (argmax).
+        - temperature < 1.0: Less random, favors high-probability tokens.
+        - temperature = 1.0: Standard softmax sampling.
+        - temperature > 1.0: More random, flattens probability distribution.
+        Default is 0.0 (deterministic).
+    top_k : int or None, optional
+        If specified, restricts sampling to the top k most likely tokens at
+        each step. Tokens outside the top k have their logits set to -inf.
+        If None, all tokens are considered. Default is None.
+    eos_id : int or None, optional
+        Token ID representing the end-of-sequence marker. If specified,
+        generation stops immediately when this token is sampled. If None,
+        generation continues for max_new_tokens iterations. Default is None.
+    verbose : bool, optional
+        If True, prints diagnostic information including input tensor shapes
+        and logits shapes during generation. Useful for debugging. Default
+        is False.
+
+    Returns
+    -------
+    torch.Tensor
+        Generated token sequence of shape (batch_size, seq_len + num_generated),
+        where num_generated ≤ max_new_tokens. Contains the original input
+        tokens concatenated with newly generated tokens.
+
+    Notes
+    -----
+    - When temperature = 0.0, the function uses deterministic argmax selection,
+      equivalent to greedy decoding.
+    - When temperature > 0.0, the function samples from the probability
+      distribution, introducing randomness in token selection.
+    - Top-k sampling filters out low-probability tokens before sampling, which
+      can improve generation quality by preventing unlikely token selection.
+    - The context window is managed automatically: if the sequence exceeds
+      context_size, only the most recent context_size tokens are used.
+    - Generation runs without gradient computation (torch.no_grad()) for
+      efficiency during inference.
+    - Early termination occurs only when eos_id is specified and that exact
+      token is generated.
+    """
+
+    if verbose:
+        print(f">>> IDX: {idx}; shape: {idx.shape}")
+
+    # For-loop iterates up to max_new_tokens times to generate new tokens.
+    for _ in range(max_new_tokens):
+        # Crop current context if it exceeds the supported context size.
+        # E.g., if LLM supports only 5 tokens, and the context size is 10
+        # then only the last 5 tokens are used as context.
+        idx_cond: torch.Tensor = idx[:, -context_size:]
+
+        # Get the predictions from the model without computing gradients.
+        with torch.no_grad():
+            logits: torch.Tensor = model(idx_cond)
+
+            if verbose:
+                print(f">>> LOGITS shape: {logits.shape}")
+
+        # Focus only on the last time step.
+        # Extract logits for the last token position in the sequence.
+        # Transform from (batch_size, seq_len, vocab_size) to (batch_size, vocab_size).
+        logits = logits[:, -1, :]
+
+        # New: Filter logits with top_k sampling.
+        if top_k is not None:
+            # Keep only the top_k highest logit values.
+            # Get the k-th largest value for each batch element.
+            top_logits: torch.Tensor
+            _: torch.Tensor
+            top_logits, _ = torch.topk(logits, top_k)
+
+            # Extract the minimum value among top-k logits (k-th largest).
+            min_val: torch.Tensor = top_logits[:, -1]
+
+            # Set all logits below the threshold to negative infinity.
+            # This effectively removes them from consideration during sampling.
+            logits = torch.where(
+                condition=logits < min_val,
+                input=torch.tensor(float("-inf")).to(logits.device),
+                other=logits,
+            )
+
+        # New: Apply temperature scaling if temperature > 0.
+        if temperature > 0.0:
+            # Scale logits by temperature to control randomness.
+            # Higher temperature makes distribution more uniform.
+            # Lower temperature makes distribution more peaked.
+            logits = logits / temperature
+
+            # Apply softmax to convert scaled logits to probabilities.
+            probs: torch.Tensor = torch.softmax(
+                logits, dim=-1
+            )  # (batch_size, vocab_size)
+
+            # Sample the next token from the probability distribution.
+            # This introduces stochasticity in token selection.
+            idx_next: torch.Tensor = torch.multinomial(
+                probs, num_samples=1
+            )  # (batch_size, 1)
+
+        # Otherwise use deterministic selection (greedy decoding).
+        else:
+            # Get the index of the vocabulary entry with the highest logit value.
+            # This is deterministic and always selects the most likely token.
+            idx_next: torch.Tensor = torch.argmax(
+                logits, dim=-1, keepdim=True
+            )  # (batch_size, 1)
+
+        # Stop generating early if end-of-sequence token is encountered and eos_id is specified.
+        if idx_next == eos_id:
+            break
+
+        # Append the sampled token index to the running sequence.
+        # Concatenate along the sequence dimension to extend the generated text.
+        idx = torch.cat((idx, idx_next), dim=1)  # (batch_size, seq_len + 1)
+
+    return idx
+
+
 # Listing 5.5 Loading OpenAI weights into our GPT model code.
 def load_weights_into_gpt(gpt, params):
 
@@ -1475,7 +1632,7 @@ def custom_collate_fn(
     pad_token_id: int = 50256,
     ignore_index: int = -100,
     allowed_max_length: int | None = None,
-    device: str = "cpu"
+    device: str = "cpu",
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Custom collate function with ignore index masking for instruction tuning.
@@ -1567,23 +1724,23 @@ def custom_collate_fn(
 
     for item in batch:
         new_item: List[int] = item.copy()
-        
+
         # Add an <|endoftext|> token.
         new_item += [pad_token_id]
-        
+
         # Pad sequences to max_length.
-        padded: List[int] = (
-            new_item + [pad_token_id] * (batch_max_length - len(new_item))
+        padded: List[int] = new_item + [pad_token_id] * (
+            batch_max_length - len(new_item)
         )
 
         # Truncate the last token for inputs and shift +1 to the right for targets.
-        inputs: torch.Tensor = torch.tensor(padded[:-1]) 
-        targets: torch.Tensor = torch.tensor(padded[1:]) 
+        inputs: torch.Tensor = torch.tensor(padded[:-1])
+        targets: torch.Tensor = torch.tensor(padded[1:])
 
         # Replace all but the first padding tokens in targets by ignore_index.
         mask: torch.Tensor = targets == pad_token_id
         indices: torch.Tensor = torch.nonzero(mask).squeeze()
-        
+
         if indices.numel() > 1:
             targets[indices[1:]] = ignore_index
 
