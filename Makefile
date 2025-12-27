@@ -1,13 +1,19 @@
-# Project name.
+# Makefile for managing Docker-based micro services for LLMs project
+.PHONY: build up down compose config debug-worker jupyter logs
+
+# Suppress make's default output
+MAKEFLAGS += --no-print-directory
+
+# Project name
 PROJECT_NAME="llms-project"
 
-# Environment used in building API: development (true) or production (false).
+# Environment used in building API: development (true) or production (false)
 DEVELOPMENT=true
 
-# Environment used in building API: with gpu support (true) or without gpu support (false).
+# Environment used in building API: with gpu support (true) or without gpu support (false)
 USE_GPUS=false
 
-# Select development or production docker compose file.
+# Select development or production docker compose file
 ifeq ($(DEVELOPMENT),true)
 	ifeq ($(USE_GPUS),true)
 		# Development environment with gpu support.
@@ -23,44 +29,67 @@ else
 	COMPOSE_FILE="docker-compose.yaml"
 endif
 
-# BUILDING.
-#####################################################################
-# Build local micro services.
-docker-build-all:
-	docker-compose --file ${COMPOSE_FILE} --project-name ${PROJECT_NAME} up --build --detach ;
+# Colorful output in terminal
+GREEN=\033[0;32m
+BLUE=\033[0;34m
+RED=\033[0;31m
+YELLOW=\033[0;33m
+NC=\033[0;0m # No Color
 
-# Turn on all local micro services.
-docker-up-all:
-	docker-compose --file ${COMPOSE_FILE} --project-name ${PROJECT_NAME} up --detach ;
 
-# Stop all local micro services.
-docker-down-all:
-	docker-compose --file ${COMPOSE_FILE} --project-name ${PROJECT_NAME} down --volumes ;
-#####################################################################
+##### Boot and halt commands #####
+build: # Build local micro services
+	@printf "\n" ;
+	@printf "${GREEN}Building all services ...${NC}\n" ;
+	@docker-compose --file ${COMPOSE_FILE} --project-name ${PROJECT_NAME} build ;
+	@printf "${BLUE}Docker images built successfully!${NC}\n" ;
+	@printf "\n" ; 
 
-# DEBUG AND TESTS.
-#####################################################################
-# Show which compose file is being used.
-which-compose:
-	@echo ${COMPOSE_FILE} ;
+up: # Turn on all local micro services
+	@printf "\n" ;
+	@printf "${GREEN}Starting all services ...${NC}\n" ;
+	@docker-compose --file ${COMPOSE_FILE} --project-name ${PROJECT_NAME} up --detach ;
+	@printf "${BLUE}All services are up and running!${NC}\n" ;
+	@printf "\n" ;
 
-# Show a panoramic view of containers.
-docker-config:
-	docker-compose --file ${COMPOSE_FILE} --project-name ${PROJECT_NAME} config ;
+down: # Stop all local micro services
+	@printf "\n" ;
+	@printf "${GREEN}Stopping all services ...${NC}\n" ;
+	@docker-compose --file ${COMPOSE_FILE} --project-name ${PROJECT_NAME} down --volumes ;
+	@printf "${BLUE}All services have been stopped!${NC}\n" ;
+	@printf "\n" ;	
 
-# Show logs for all micro services.
-docker-logs:
-	docker-compose --file ${COMPOSE_FILE} --project-name ${PROJECT_NAME} logs --follow --timestamps ;
+##### Debug and development commands #####
+compose: # Show which compose file is being used
+	@printf "\n" ;
+	@printf "${GREEN}Using compose file: ${YELLOW}${COMPOSE_FILE}${NC}\n" ;
+	@printf "\n" ;
 
-# Run jupyterlab on worker service.
-docker-exec-jupyterlab:
-	docker-compose --file ${COMPOSE_FILE} --project-name ${PROJECT_NAME} exec ${WORKER_SERVICE} sh -c "jupyter-lab --allow-root --ip 0.0.0.0" ;
+config: # Show a panoramic view of containers
+	@printf "\n" ;
+	@$(MAKE) compose ;
+	@printf "${GREEN}Docker compose configuration:${NC}\n" ;
+	@docker-compose --file ${COMPOSE_FILE} --project-name ${PROJECT_NAME} config ;
+	@printf "${BLUE}Compose file is OK!${NC}\n" ;
+	@printf "\n" ;
 
-# Debug running worker container.
-docker-debug-worker-service:
-	docker-compose --file ${COMPOSE_FILE} --project-name ${PROJECT_NAME} exec ${WORKER_SERVICE} sh -c "/usr/bin/zsh" ;
+debug-worker: # Debug running worker container
+	@printf "\n" ;
+	@printf "${GREEN}Debugging worker service ...${NC}\n" ;
+	@docker-compose --file ${COMPOSE_FILE} --project-name ${PROJECT_NAME} exec ${WORKER_SERVICE} sh -c "/bin/bash" ;
+	@printf "${BLUE}Exited bash terminal inside worker container!${NC}\n" ;
+	@printf "\n" ;
 
-# Debug running chroma database container.
-docker-debug-chroma-service:
-	docker-compose --file ${COMPOSE_FILE} --project-name ${PROJECT_NAME} exec chroma-service sh -c "/usr/bin/zsh" ;
-#####################################################################
+jupyter: # Run jupyterlab on worker service
+	@printf "\n" ;
+	@printf "${GREEN}Starting JupyterLab on worker service ...${NC}\n" ;
+	@docker-compose --file ${COMPOSE_FILE} --project-name ${PROJECT_NAME} exec ${WORKER_SERVICE} sh -c "jupyter-lab --allow-root --ip 0.0.0.0" || true ;
+	@printf "${BLUE}Exited JupyterLab on worker container!${NC}\n" ;
+	@printf "\n" ;
+
+logs: # Show logs for all micro services
+	@printf "\n" ;
+	@printf "${GREEN}Showing logs for all services ...${NC}\n" ;
+	@docker-compose --file ${COMPOSE_FILE} --project-name ${PROJECT_NAME} logs --follow --timestamps ;
+	@printf "${BLUE}Exited logs view!${NC}\n" ;
+	@printf "\n" ;
