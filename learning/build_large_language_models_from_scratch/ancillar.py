@@ -1,3 +1,8 @@
+"""
+This module contains ancillary classes and functions for building and training
+large language models from scratch using PyTorch. 
+"""
+
 # Load packages.
 import json
 import os
@@ -9,6 +14,8 @@ import pandas as pd
 import tiktoken
 import torch
 import torch.nn as nn
+from matplotlib import pyplot as plt
+from matplotlib.ticker import MaxNLocator
 from torch.utils.data import DataLoader, Dataset
 
 
@@ -514,6 +521,179 @@ def token_ids_to_text(token_ids, tokenizer):
     return tokenizer.decode(flat.tolist())
 
 
+# Listing 5.3: The main function for pretraining LLMs.
+def train_model_simple(
+    model: nn.Module,
+    train_loader: DataLoader,
+    val_loader: DataLoader,
+    optimizer: torch.optim.Optimizer,
+    device: torch.device,
+    num_epochs: int,
+    eval_freq: int,
+    eval_iter: int,
+    start_context: str,
+    tokenizer: tiktoken.core.Encoding,
+    finetune_classification_task: bool = False,
+) -> tuple[list[float], list[float], list[int]]:
+    """
+    Train a GPT model using training and validation data loaders.
+
+    This function performs a standard training loop over multiple epochs,
+    periodically evaluates the model on training and validation data, and
+    tracks loss values along with the number of tokens processed.
+
+    Parameters
+    ----------
+    model : nn.Module
+        The GPT model to train.
+    train_loader : DataLoader
+        DataLoader providing training batches of input and target tokens.
+    val_loader : DataLoader
+        DataLoader providing validation batches of input and target tokens.
+    optimizer : torch.optim.Optimizer
+        Optimizer used to update model parameters.
+    device : torch.device
+        Device (CPU or CUDA) on which to perform computation.
+    num_epochs : int
+        Number of training epochs.
+    eval_freq : int
+        Frequency (in steps) to evaluate and record losses.
+    eval_iter : int
+        Number of batches to use for each evaluation.
+    start_context : str
+        Initial text prompt used to generate sample output after each epoch.
+    tokenizer : tiktoken.core.Encoding
+        Tokenizer used for sample text generation.
+    finetune_classification_task : bool, optional
+        If True, indicates that the model is being fine-tuned for a
+        classification task, and only the last token's logits are used.
+        Default is False.
+
+    Returns
+    -------
+    tuple[list[float], list[float], list[int]]
+        A tuple containing:
+        - train_losses : list of float
+            Recorded training losses at evaluation steps.
+        - val_losses : list of float
+            Recorded validation losses at evaluation steps.
+        - track_tokens_seen : list of int
+            Number of tokens processed at each evaluation step.
+
+    Notes
+    -----
+    - Uses calc_loss_batch for loss computation.
+    - Uses evaluate_model for periodic evaluation.
+    - Prints a generated sample after each epoch.
+    """
+
+    # Initialize lists to track losses and tokens seen.
+    train_losses, val_losses, track_tokens_seen = [], [], []
+    tokens_seen, global_step = 0, -1
+
+    # Main training loop.
+    for epoch in range(num_epochs):
+
+        # Set model to training mode.
+        model.train()
+
+        # Iterate over all batches in the training data.
+        for input_batch, target_batch in train_loader:
+
+            # Reset loss gradients from previous batch iteration.
+            optimizer.zero_grad()
+
+            # Calculate loss.
+            loss = calc_loss_batch(
+                input_batch, target_batch, model, device, finetune_classification_task
+            )
+
+            #  Calculate loss gradients.
+            loss.backward()
+
+            # Update model weights using loss gradients.
+            optimizer.step()
+
+            # Track the number of tokens seen and global step.
+            tokens_seen += input_batch.numel()
+            global_step += 1
+
+            # Optional evaluation step.
+            if global_step % eval_freq == 0:
+                train_loss, val_loss = evaluate_model(
+                    model, train_loader, val_loader, device, eval_iter
+                )
+                train_losses.append(train_loss)
+                val_losses.append(val_loss)
+                track_tokens_seen.append(tokens_seen)
+
+                print(
+                    f">>> Epoch: {epoch+1} (Step {global_step:06d}): "
+                    f"Train loss {train_loss:.6f}, Validation loss {val_loss:.6f}"
+                )
+
+        # Print a sample text after each epoch.
+        generate_and_print_sample(model, tokenizer, device, start_context)
+
+    return train_losses, val_losses, track_tokens_seen
+
+
+def generate_and_print_sample(
+    model: nn.Module,
+    tokenizer: tiktoken.core.Encoding,
+    device: torch.device,
+    start_context: str,
+) -> None:
+    """
+    Generate and print a sample text from the model during training.
+
+    This function switches the model to evaluation mode, encodes the provided
+    start context, generates a short continuation, decodes it back to text, and
+    prints the result in a compact format. It restores training mode afterward.
+
+    Parameters
+    ----------
+    model : nn.Module
+        The GPT model used to generate text samples.
+    tokenizer : tiktoken.core.Encoding
+        Tokenizer used to encode the prompt and decode generated tokens.
+    device : torch.device
+        Device (CPU or CUDA) on which to perform computation.
+    start_context : str
+        Initial text prompt used as the generation seed.
+
+    Returns
+    -------
+    None
+        This function prints the generated sample and returns nothing.
+
+    Notes
+    -----
+    - Uses text_to_token_ids for prompt encoding and token_ids_to_text for decoding.
+    - Calls aux.generate_text_simple for greedy decoding.
+    - Temporarily sets model to eval mode and restores train mode after printing.
+    """
+
+    model.eval()
+    context_size = model.pos_emb.weight.shape[0]
+    encoded = text_to_token_ids(start_context, tokenizer).to(device)
+
+    with torch.no_grad():
+
+        token_ids = generate_text_simple(
+            model=model, idx=encoded, max_new_tokens=50, context_size=context_size
+        )
+
+    decoded_text = token_ids_to_text(token_ids, tokenizer)
+
+    # Compact print format.
+    print("\n #-----------------------------------------------# \n")
+    print(decoded_text)
+    print("\n #-----------------------------------------------# \n")
+
+    model.train()
+
+
 # Listing 5.4 A modified text generation function with more diversity.
 def generate(
     model: nn.Module,
@@ -752,6 +932,58 @@ def load_weights_into_gpt(gpt, params):
     gpt.out_head.weight = assign(gpt.out_head.weight, params["wte"])
 
 
+def plot_losses(
+    epochs_seen: List[int],
+    tokens_seen: List[int],
+    train_losses: List[float],
+    val_losses: List[float],
+    save_fig: bool = False,
+) -> None:
+    """
+    Plot training and validation losses against epochs and tokens seen.
+
+    Parameters
+    ----------
+    epochs_seen : list of int
+        List of epoch numbers corresponding to recorded losses.
+    tokens_seen : list of int
+        List of token counts corresponding to recorded losses.
+    train_losses : list of float
+        List of training loss values.
+    val_losses : list of float
+        List of validation loss values.
+    save_fig : bool, optional
+        If True, saves the plot as "loss-plot.pdf". Default is False.
+    """
+
+    fig, ax1 = plt.subplots(figsize=(8, 4))
+
+    # Plot training and validation loss against epochs
+    ax1.plot(epochs_seen, train_losses, label="Training loss")
+    ax1.plot(epochs_seen, val_losses, linestyle="-.", label="Validation loss")
+    ax1.set_xlabel("Epochs")
+    ax1.set_ylabel("Loss")
+    ax1.legend(loc="upper right")
+
+    # Only show integer labels on x-axis.
+    ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
+
+    # Create a second x-axis for tokens seen.
+    ax2 = ax1.twiny()  # Create a second x-axis that shares the same y-axis.
+    ax2.plot(tokens_seen, train_losses, alpha=0)  # Invisible plot for aligning ticks.
+    ax2.set_xlabel("Tokens seen")
+
+    # Adjust layout to make room.
+    fig.tight_layout()
+
+    # Save the figure if requested.
+    if save_fig:
+        plt.savefig("loss-plot.pdf")
+
+    # Show the plot.
+    plt.show()
+
+
 # Listing 6.3 Splitting the dataset.
 def random_split(
     df: pd.DataFrame, train_frac: float, validation_frac: float
@@ -877,12 +1109,13 @@ def calc_accuracy_loader(
     return correct_predictions / num_examples
 
 
-# Listing 6.8b Calculating the classification loss for a single batch.
+# Listing 6.8b Calculating the for a single batch.
 def calc_loss_batch(
     input_batch: torch.Tensor,
     target_batch: torch.Tensor,
     model: nn.Module,
     device: torch.device,
+    finetune_classification_task: bool = False,
 ) -> torch.Tensor:
     """
     Calculate cross-entropy loss for a batch of inputs and targets.
@@ -901,6 +1134,10 @@ def calc_loss_batch(
         Neural network model that outputs logits for each token position.
     device : torch.device
         Device (CPU or CUDA) on which to perform computation.
+    finetune_classification_task : bool, optional
+        If True, indicates that the model is being fine-tuned for a
+        classification task, and only the last token's logits are used.
+        Default is False.
 
     Returns
     -------
@@ -916,10 +1153,19 @@ def calc_loss_batch(
     input_batch: torch.Tensor = input_batch.to(device)
     target_batch: torch.Tensor = target_batch.to(device)
 
-    # Logits of last output token.
-    logits: torch.Tensor = model(input_batch)[:, -1, :]
+    # If we are dealing with a classification fine tuning task (chapter 6), then we are
+    # interested in the last token output bt the model.
+    if finetune_classification_task:
+        logits: torch.Tensor = model(input_batch)[:, -1, :]
+        targets: torch.Tensor = target_batch[-1]
 
-    loss: torch.Tensor = torch.nn.functional.cross_entropy(logits, target_batch)
+    # In instruction fine tuning (chapter 7) we use all tokens output by model.
+    else:
+        logits: torch.Tensor = model(input_batch).flatten(0, 1)
+        targets: torch.Tensor = target_batch.flatten()
+
+    # Calculate lodd.
+    loss: torch.Tensor = torch.nn.functional.cross_entropy(logits, targets)
 
     return loss
 
@@ -930,6 +1176,7 @@ def calc_loss_loader(
     model: nn.Module,
     device: torch.device,
     num_batches: int = None,
+    finetune_classification_task: bool = False,
 ) -> float:
     """
     Calculate the average cross-entropy loss of a model over a data loader.
@@ -949,6 +1196,10 @@ def calc_loss_loader(
     num_batches : int, optional
         The maximum number of batches to evaluate. If None, evaluates all
         batches in the data loader.
+    finetune_classification_task : bool, optional
+        If True, indicates that the model is being fine-tuned for a
+        classification task, and only the last token's logits are used.
+        Default is False.
 
     Returns
     -------
@@ -977,7 +1228,7 @@ def calc_loss_loader(
     for i, (input_batch, target_batch) in enumerate(data_loader):
         if i < num_batches:
             loss: torch.Tensor = calc_loss_batch(
-                input_batch, target_batch, model, device
+                input_batch, target_batch, model, device, finetune_classification_task
             )
             total_loss += loss.item()
         else:
@@ -996,6 +1247,7 @@ def train_classifier_simple(
     num_epochs: int,
     eval_freq: int,
     eval_iter: int,
+    finetune_classification_task: bool = False,
 ) -> tuple[list[float], list[float], list[float], list[float], int]:
     """
     Train a classification model using the provided data loaders and optimizer.
@@ -1021,6 +1273,10 @@ def train_classifier_simple(
         Frequency (in steps) to evaluate and record loss.
     eval_iter : int
         Number of batches to use for evaluation.
+    finetune_classification_task : bool, optional
+        If True, indicates that the model is being fine-tuned for a
+        classification task, and only the last token's logits are used.
+        Default is False.
 
     Returns
     -------
@@ -1060,7 +1316,7 @@ def train_classifier_simple(
             # Reset loss gradients from previous batch iteration.
             optimizer.zero_grad()
             loss: torch.Tensor = calc_loss_batch(
-                input_batch, target_batch, model, device
+                input_batch, target_batch, model, device, finetune_classification_task
             )
 
             # Calculate loss gradients.
@@ -1311,12 +1567,14 @@ def format_input(entry: Dict[str, str]) -> str:
     - If 'input' is empty, only the instruction is included.
     - The output follows the Alpaca prompt format.
     """
+
     instruction_text: str = (
         f"Below is an instruction that describes a task. "
         f"Write a response that appropriately completes the request."
         f"\n\n### Instruction:\n{entry['instruction']}"
     )
     input_text: str = f"\n\n### Input:\n{entry['input']}" if entry["input"] else ""
+
     return instruction_text + input_text
 
 
