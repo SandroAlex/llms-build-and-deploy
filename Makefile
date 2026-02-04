@@ -1,5 +1,7 @@
 # Makefile for managing Docker-based micro services for LLMs project
-.PHONY: build up down compose config debug-worker jupyter logs
+.PHONY: help # Help command
+.PHONY: build up down # Boot and halt commands
+.PHONY: compose config debug-worker jupyter logs # Debug and development commands
 
 # Suppress make's default output
 MAKEFLAGS += --no-print-directory
@@ -36,6 +38,19 @@ RED=\033[0;31m
 YELLOW=\033[0;33m
 NC=\033[0;0m # No Color
 
+##### Help command #####
+help: # Show this help message
+	@printf "\n" ;
+	@printf "${BLUE}Available commands:${NC}\n" ;
+	@printf "${YELLOW}make build${NC}        ${RED}- Build local micro services${NC}\n" ;
+	@printf "${YELLOW}make up${NC}           ${RED}- Turn on all local micro services${NC}\n" ;
+	@printf "${YELLOW}make down${NC}         ${RED}- Stop all local micro services${NC}\n" ;
+	@printf "${YELLOW}make compose${NC}      ${RED}- Show which compose file is being used${NC}\n" ;
+	@printf "${YELLOW}make config${NC}       ${RED}- Show a panoramic view of containers${NC}\n" ;
+	@printf "${YELLOW}make debug-worker${NC} ${RED}- Debug running worker container${NC}\n" ;
+	@printf "${YELLOW}make jupyter${NC}      ${RED}- Run jupyterlab on worker service${NC}\n" ;
+	@printf "${YELLOW}make logs${NC}         ${RED}- Show logs for all micro services${NC}\n" ;
+	@printf "\n" ;
 
 ##### Boot and halt commands #####
 build: # Build local micro services
