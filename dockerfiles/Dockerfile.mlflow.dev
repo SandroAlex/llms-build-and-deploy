@@ -1,0 +1,2 @@
+# Mlflow tracking server development image (Debian 11, Python 3.10.18, mlflow 3.9.0)
+FROM ghcr.io/mlflow/mlflow:latest

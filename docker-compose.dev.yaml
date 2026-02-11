@@ -1,10 +1,10 @@
-# Description: Docker compose configuration file for development environment.
+# Description: Docker compose configuration file for development environment
 version: "3.8"
 
-# Microservices configuration.
+# Microservices configuration
 services:
 
-  # RabbitMQ broker service.
+  # RabbitMQ broker service
   broker-service:
     build:
       context: .
@@ -13,7 +13,7 @@ services:
       - ${RABBITMQ_PORT}:5672
       - ${RABBITMQ_PORT_UI}:15672
 
-  # MongoDB database service.
+  # MongoDB database service
   database-service:
     build:
       context: .
@@ -21,7 +21,7 @@ services:
     ports:
       - ${MONGODB_PORT}:27017
 
-  # Chroma vector database service.
+  # Chroma vector database service
   chroma-service:
     build:
       context: .
@@ -33,7 +33,7 @@ services:
     networks:
       - chroma_net
 
-  # FastAPI web tool service.
+  # FastAPI web tool service
   web-service:
     build:
       context: .
@@ -49,7 +49,7 @@ services:
       - broker-service
       - database-service
 
-  # Hard worker service without GPU support.
+  # Hard worker service without GPU support
   worker-service:
     build:
       context: .
@@ -62,7 +62,21 @@ services:
       - .:/llm_app      
     command: sleep infinity
 
-# Networks configuration.
+  # Mlflow tracking service
+  mlflow-service:
+    build:
+      context: .
+      dockerfile: dockerfiles/Dockerfile.mlflow.dev
+    ports:
+      - ${MLFLOW_PORT}:5000
+    volumes:
+      - ./mlflow:/home/mlflow
+    environment:
+      - MLFLOW_TRACKING_URI=${MLFLOW_URI}      
+    working_dir: /home
+    entrypoint: mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri ${MLFLOW_URI}
+
+# Networks configuration
 networks:
   chroma_net:
     driver: bridge    
