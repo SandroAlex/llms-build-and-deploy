@@ -1,2 +1,30 @@
 # Mlflow tracking server development image (Debian 11, Python 3.10.18, mlflow 3.9.0)
 FROM ghcr.io/mlflow/mlflow:latest
+
+# Match the worker user with mlflow user to avoid permission issues when sharing files between the worker and mlflow containers
+ARG USER_NAME=mlflow-user
+ARG USER_PASSWORD=mlflow-user
+ARG USER_UID=1000
+ARG USER_GID=1000
+
+# Root user is needed to create the mlflow user 
+USER root
+
+# Create a directory for the application
+RUN mkdir -p /mlflow_app
+
+# Set working directory
+WORKDIR /mlflow_app
+
+# Create user with matching UID / GID and give them sudo privileges
+RUN groupadd --gid $USER_GID $USER_NAME && \
+    useradd --uid $USER_UID --gid $USER_GID --create-home $USER_NAME && \
+    chown -R $USER_NAME:$USER_NAME /mlflow_app && \
+    echo "%sudo ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers && \
+    adduser $USER_NAME sudo
+
+# Change permissions for the mlflow_app directory to allow read/write access for the mlflow user
+RUN chmod -R 777 /mlflow_app
+
+# Return to mlflow user for mlflow server operations
+USER $USER_NAME

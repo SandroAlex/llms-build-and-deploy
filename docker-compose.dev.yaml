@@ -58,6 +58,7 @@ services:
       - ${JUPYTER_EXTERNAL_PORT}:8888
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}      
+      - MLFLOW_TRACKING_URI="sqlite:////llm_app/mlflow/database.db"
     volumes:
       - .:/llm_app      
     command: sleep infinity
@@ -67,14 +68,14 @@ services:
     build:
       context: .
       dockerfile: dockerfiles/Dockerfile.mlflow.dev
+    user: "1000:1000"
     ports:
       - ${MLFLOW_PORT}:5000
     volumes:
-      - ./mlflow:/home/mlflow
+      - ./mlflow:/mlflow_app
     environment:
-      - MLFLOW_TRACKING_URI=${MLFLOW_URI}      
-    working_dir: /home
-    entrypoint: mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri ${MLFLOW_URI}
+      - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI}      
+    entrypoint: mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri ${MLFLOW_TRACKING_URI}
 
 # Networks configuration
 networks:

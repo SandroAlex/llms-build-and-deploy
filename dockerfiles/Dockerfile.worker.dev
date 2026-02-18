@@ -1,41 +1,36 @@
-# Base image for our worker (Python 3.10.12).
+# Base image for our worker (Python 3.10.12)
 FROM ubuntu:22.04
 
-# It sets up a user with specific UID and GID to avoid
-# permission issues when mounting volumes from the host system into the container.
-# The user is created with the same UID and GID as the host user, which allows for
-# seamless file sharing between the host and the container without permission conflicts.
+# It sets up a user with specific UID and GID to avoid permission issues when mounting volumes from the host system into the container.
+# The user is created with the same UID and GID as the host user, which allows for seamless file sharing between the host and the container without permission conflicts
 ARG USER_NAME=worker-user
 ARG USER_PASSWORD=worker-user
 ARG USER_UID=1000
 ARG USER_GID=1000
 
-# Avoid interactive prompts during package installation.
-# This environment variable is set to noninteractive mode, which prevents any 
-# interactive prompts from appearing during package installation. This is 
-# particularly useful in Dockerfiles to ensure that the build process can run 
-# without manual intervention.
+# Avoid interactive prompts during package installation. This environment variable is set to noninteractive mode, which prevents any interactive prompts from appearing during package installation
+# This is particularly useful in Dockerfiles to ensure that the build process can run without manual intervention
 ARG DEBIAN_FRONTEND=noninteractive
 
-# Create a directory for the application.
+# Create a directory for the application
 RUN mkdir -p /llm_app/requirements
 
-# Set working directory.
+# Set working directory
 WORKDIR /llm_app
 
-# Include requirements file.
+# Include requirements file
 COPY ../requirements/requirements.worker.dev.txt /llm_app/requirements/requirements.worker.dev.txt
 
-# Prevents Python from writing pyc files to disc (equivalent to python -B option).
+# Prevents Python from writing pyc files to disc (equivalent to python -B option)
 ENV PYTHONDONTWRITEBYTECODE 1 \
-    # Prevents Python from buffering stdout and stderr (equivalent to python -u option).
+    # Prevents Python from buffering stdout and stderr (equivalent to python -u option)
     PYTHONUNBUFFERED 1 \
-    # Ignore warning message from pip when installing packages as root.
+    # Ignore warning message from pip when installing packages as root
     PIP_ROOT_USER_ACTION=ignore
 
-# Install main dependencies.
+# Install main dependencies
 RUN apt-get update --yes && \
-    # Operational system dependencies.
+    # Operational system dependencies
     apt-get install --yes --no-install-recommends \
         sudo \
         build-essential \
@@ -47,6 +42,8 @@ RUN apt-get update --yes && \
         curl \
         wget \
         vim \
+        zstd \
+        git \
         vim-gtk3 \
         cmake \
         netcat-traditional \
@@ -57,37 +54,37 @@ RUN apt-get update --yes && \
         libgl1 \
         libcairo2-dev \
         gpg-agent && \
-    # Install python packages for building the worker service.
+    # Install python packages for building the worker service
     pip3 install --upgrade \
         pip \
         setuptools \
         wheel && \
-    # Install pytorch dependencies.  
+    # Install pytorch dependencies
     pip3 install --index-url https://download.pytorch.org/whl/cpu \
         torch==2.5.1+cpu \
         torchaudio==2.5.1+cpu \
         torchvision==0.20.1+cpu && \
-    # Install the worker service dependencies.
+    # Install the worker service dependencies
     pip3 install --no-cache-dir -r \
         /llm_app/requirements/requirements.worker.dev.txt && \
-    # Cleaning up unused files.
+    # Cleaning up unused files
     # This folder contains cached package lists used by apt-get, and once the packages are installed, 
-    # these lists are no longer needed. Removing them helps to keep the image smaller and more efficient.
+    # these lists are no longer needed. Removing them helps to keep the image smaller and more efficient
     rm -rf /var/lib/apt/lists/*
 
-# Create the worker user with sudo privilegies.
+# Create the worker user with sudo privilegies
 RUN groupadd --gid $USER_GID $USER_NAME && \
     useradd --uid $USER_UID --gid $USER_GID --create-home $USER_NAME && \
     echo "%sudo ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers && \
     adduser $USER_NAME sudo
 
-# Enable prompt color in .bashrc.
+# Enable prompt color in .bashrc
 RUN sed -i 's/^#force_color_prompt=yes/force_color_prompt=yes/' /home/$USER_NAME/.bashrc && \
     # Give worker user permissions for root folder.
     chown -R $USER_NAME:$USER_NAME /llm_app
 
-# Important tools are installed here (black, isort, pytest, uv, etc).
+# Important tools are installed here (black, isort, pytest, uv, etc)
 ENV PATH="/home/${USER_NAME}/.local/bin:$PATH"
 
-# Switch to the worker user.
+# Switch to the worker user
 USER $USER_NAME

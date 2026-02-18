@@ -38,7 +38,7 @@ RED=\033[0;31m
 YELLOW=\033[0;33m
 NC=\033[0;0m # No Color
 
-##### Help command #####
+# Help command 
 help: # Show this help message
 	@printf "\n" ;
 	@printf "${BLUE}Available commands:${NC}\n" ;
@@ -52,7 +52,7 @@ help: # Show this help message
 	@printf "${YELLOW}make logs${NC}         ${RED}- Show logs for all micro services${NC}\n" ;
 	@printf "\n" ;
 
-##### Boot and halt commands #####
+# Boot and halt commands 
 build: # Build local micro services
 	@printf "\n" ;
 	@printf "${GREEN}Building all services ...${NC}\n" ;
@@ -74,7 +74,7 @@ down: # Stop all local micro services
 	@printf "${BLUE}All services have been stopped!${NC}\n" ;
 	@printf "\n" ;	
 
-##### Debug and development commands #####
+# Debug and development commands 
 compose: # Show which compose file is being used
 	@printf "\n" ;
 	@printf "${GREEN}Using compose file: ${YELLOW}${COMPOSE_FILE}${NC}\n" ;
