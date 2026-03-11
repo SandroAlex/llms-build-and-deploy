@@ -1,3 +1,7 @@
+"""
+Description.
+"""
+
 # Initial imports
 import math
 from copy import deepcopy
@@ -33,9 +37,7 @@ def make_std_mask(tgt: Tensor, pad: int) -> Tensor:
     tgt_mask: Tensor = (tgt != pad).unsqueeze(-2)
 
     # Combine the target mask with the subsequent mask to prevent attending to future positions
-    output: Tensor = tgt_mask & subsequent_mask(size=tgt.size(-1)).type_as(
-        tgt_mask.data
-    )
+    output: Tensor = tgt_mask & subsequent_mask(size=tgt.size(-1)).type_as(tgt_mask.data)
 
     return output
 
@@ -210,35 +212,105 @@ def create_model(src_vocab, tgt_vocab, N, d_model, d_ff, h, dropout=0.1):
 
 
 class Embeddings(nn.Module):
-    def __init__(self, d_model, vocab):
-        super().__init__()
-        self.lut = nn.Embedding(vocab, d_model)
-        self.d_model = d_model
+    """
+    Token embedding layer scaled by the square root of model dimension.
+    """
 
-    def forward(self, x):
-        out = self.lut(x) * math.sqrt(self.d_model)
+    def __init__(self, d_model: int, vocab: int) -> None:
+        """
+        Initialize embedding lookup table.
+
+        Parameters
+        ----------
+        d_model : int
+            Embedding dimension.
+        vocab : int
+            Vocabulary size.
+        """
+
+        super().__init__()
+        self.lut: nn.Embedding = nn.Embedding(vocab, d_model)
+        self.d_model: int = d_model
+
+    def forward(self, x: Tensor) -> Tensor:
+        """
+        Embed token IDs and apply transformer scaling.
+
+        Parameters
+        ----------
+        x : Tensor
+            Input token IDs of shape (batch_size, sequence_length).
+
+        Returns
+        -------
+        Tensor
+            Embedded token representations.
+        """
+
+        out: Tensor = self.lut(x) * math.sqrt(self.d_model)
         return out
 
 
+# Listing 2.3 Designing the PositionalEncoding class
 class PositionalEncoding(nn.Module):
-    def __init__(self, d_model, dropout, max_len=5000):
+    """
+    Sinusoidal positional encoding for transformer inputs.
+    """
+
+    def __init__(self, d_model: int, dropout: float, max_len: int = 5000) -> None:
+        """
+        Initialize positional encodings and dropout layer.
+
+        Parameters
+        ----------
+        d_model : int
+            Embedding dimension.
+        dropout : float
+            Dropout probability.
+        max_len : int, default=5000
+            Maximum sequence length for precomputed encodings.
+        """
+
         super().__init__()
-        self.dropout = nn.Dropout(p=dropout)
-        pe = torch.zeros(max_len, d_model, device=DEVICE)
-        position = torch.arange(0.0, max_len, device=DEVICE).unsqueeze(1)
-        div_term = torch.exp(
-            torch.arange(0.0, d_model, 2, device=DEVICE)
-            * -(math.log(10000.0) / d_model)
+
+        self.dropout: nn.Dropout = nn.Dropout(p=dropout)
+
+        pe: Tensor = torch.zeros(max_len, d_model, device=DEVICE)
+        position: Tensor = torch.arange(0.0, max_len, device=DEVICE).unsqueeze(1)
+        div_term: Tensor = torch.exp(
+            torch.arange(0.0, d_model, 2, device=DEVICE) * -(math.log(10000.0) / d_model)
         )
-        pe_pos = torch.mul(position, div_term)
+        pe_pos: Tensor = torch.mul(position, div_term)
+
+        # Apply sine to even indices and cosine to odd indices
         pe[:, 0::2] = torch.sin(pe_pos)
         pe[:, 1::2] = torch.cos(pe_pos)
         pe = pe.unsqueeze(0)
+
+        # Not a trainable parameter, but we want it to be part of the model's state
         self.register_buffer("pe", pe)
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
+        """Add positional encoding to token embeddings.
+
+        Parameters
+        ----------
+        x : Tensor
+            Input embeddings of shape (batch_size, sequence_length, d_model).
+
+        Returns
+        -------
+        Tensor
+            Position-aware embeddings after dropout.
+        """
+
+        # Adds positional encoding to word embedding. Note that `requires_grad_(False)`
+        # means there’s no need to train these values
         x = x + self.pe[:, : x.size(1)].requires_grad_(False)
-        out = self.dropout(x)
+
+        # Apply dropout to the combined embeddings
+        out: Tensor = self.dropout(x)
+
         return out
 
 
@@ -367,7 +439,6 @@ class NoamOpt:
         if step is None:
             step = self._step
         output = self.factor * (
-            self.model_size ** (-0.5)
-            * min(step ** (-0.5), step * self.warmup ** (-1.5))
+            self.model_size ** (-0.5) * min(step ** (-0.5), step * self.warmup ** (-1.5))
         )
         return output

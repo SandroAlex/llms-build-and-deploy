@@ -29,10 +29,7 @@ def seq_padding(X: List[List[int]], padding: int = PAD) -> np.ndarray:
     ML: int = max(L)
 
     padded_seq: np.ndarray = np.array(
-        [
-            np.concatenate([x, [padding] * (ML - len(x))]) if len(x) < ML else x
-            for x in X
-        ]
+        [np.concatenate([x, [padding] * (ML - len(x))]) if len(x) < ML else x for x in X]
     )
 
     return padded_seq
