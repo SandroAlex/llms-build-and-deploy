@@ -1,5 +1,5 @@
 ---
-name: python-fundamentals
+name: python
 description: Guide to write clean and efficient Python pure code. 
 ---
 

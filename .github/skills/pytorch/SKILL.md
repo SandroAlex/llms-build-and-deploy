@@ -1,5 +1,5 @@
 ---
-name: pytorch-fundamentals
+name: pytorch
 description: Expert guidance for deep learning, transformers, diffusion models, and large language model development with basic PyTorch package.
 ---
 
