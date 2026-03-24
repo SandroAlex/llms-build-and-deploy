@@ -16,38 +16,55 @@ from .chapter2 import DEVICE, PAD
 
 
 class Batch:
+    """
+    Container for a single training batch with masking.
+    """
 
     def __init__(
-        self, src: np.ndarray, tgt: Optional[np.ndarray] = None, pad: int = PAD
+        self,
+        src: np.ndarray,
+        tgt: Optional[np.ndarray] = None,
+        pad: int = PAD,
     ) -> None:
+        """
+        Build source / target tensors and their masks.
 
-        # Input sequence converted to a PyTorch tensor and moved to the appropriate
-        # device
+        Parameters
+        ----------
+        src : np.ndarray
+            Source token IDs of shape (batch_size, src_len).
+        tgt : Optional[np.ndarray], default=None
+            Target token IDs of shape (batch_size, tgt_len).
+            When None only the source side is prepared.
+        pad : int, default=PAD
+            Padding token index used to build masks.
+        """
+
         src: Tensor = torch.from_numpy(src).to(DEVICE).long()
-        self.src = src
+        self.src: Tensor = src
 
-        # Boolean mask indicating which elements in the source sequence are not padding
-        self.src_mask = (src != pad).unsqueeze(-2)
+        # Note: unsqueeze(-2) adds a broadcast dim so the mask shape becomes
+        # (batch, 1, src_len), compatible with multi-head attention's
+        # (batch, heads, q, k)
+        self.src_mask: Tensor = (src != pad).unsqueeze(-2)
 
         if tgt is not None:
 
-            # Target sequence converted to a PyTorch tensor and moved to the appropriate
-            # device
             tgt: Tensor = torch.from_numpy(tgt).to(DEVICE).long()
 
-            # Input to the decoder is the target sequence excluding the last token
-            self.tgt = tgt[:, :-1]
+            # Teacher-forcing split: the decoder receives all tokens except the last one
+            # as input (tgt) and predicts all tokens except the first one (tgt_y). This
+            # one-position shift lets the model learn to predict the next token at every
+            # step
+            self.tgt: Tensor = tgt[:, :-1]
+            self.tgt_y: Tensor = tgt[:, 1:]
 
-            # Target output is the shifted target sequence, excluding the first token
-            self.tgt_y = tgt[:, 1:]
+            # Combines padding mask with a causal (subsequent) mask so the decoder cannot
+            # attend to future positions or padding
+            self.tgt_mask: Tensor = make_std_mask(tgt=self.tgt, pad=pad)
 
-            # Mask for decoder input. The purpose of this mask is to conceal the
-            # subsequent tokens in the input, ensuring that the model relies solely on
-            # previous tokens for making predictions
-            self.tgt_mask = make_std_mask(tgt=self.tgt, pad=pad)
-
-            # Number of non-padding tokens in the target output, which is used for loss
-            self.ntokens = (self.tgt_y != pad).data.sum()
+            # Token count excluding padding, used to normalise the loss per real token
+            self.ntokens: Tensor = (self.tgt_y != pad).data.sum()
 
 
 # Listing 2.5 an encoder-decoder transformer
@@ -510,6 +527,7 @@ class Embeddings(nn.Module):
         """
 
         out: Tensor = self.lut(x) * math.sqrt(self.d_model)
+
         return out
 
 
@@ -678,13 +696,45 @@ class MultiHeadedAttention(nn.Module):
 
 
 class Generator(nn.Module):
-    def __init__(self, d_model, vocab):
-        super().__init__()
-        self.proj = nn.Linear(d_model, vocab)
+    """
+    Final linear projection and log-softmax for token generation.
+    """
 
-    def forward(self, x):
-        out = self.proj(x)
-        probs = nn.functional.log_softmax(out, dim=-1)
+    def __init__(self, d_model: int, vocab: int) -> None:
+        """
+        Initialize the generator projection layer.
+
+        Parameters
+        ----------
+        d_model : int
+            Model embedding dimension.
+        vocab : int
+            Vocabulary size.
+        """
+
+        super().__init__()
+        self.proj: nn.Linear = nn.Linear(d_model, vocab)
+
+    def forward(self, x: Tensor) -> Tensor:
+        """
+        Project decoder output to vocabulary log-probabilities.
+
+        Parameters
+        ----------
+        x : Tensor
+            Decoder output of shape
+            (batch_size, seq_len, d_model).
+
+        Returns
+        -------
+        Tensor
+            Log-probabilities of shape
+            (batch_size, seq_len, vocab).
+        """
+
+        out: Tensor = self.proj(x)
+        probs: Tensor = nn.functional.log_softmax(out, dim=-1)
+
         return probs
 
 
@@ -735,71 +785,258 @@ class PositionwiseFeedForward(nn.Module):
 
 
 class LabelSmoothing(nn.Module):
-    def __init__(self, size, padding_idx, smoothing=0.1):
-        super().__init__()
-        self.criterion = nn.KLDivLoss(reduction="sum")
-        self.padding_idx = padding_idx
-        self.confidence = 1.0 - smoothing
-        self.smoothing = smoothing
-        self.size = size
-        self.true_dist = None
+    """
+    Label-smoothing loss using KL divergence.
 
-    def forward(self, x, target):
+    Instead of a hard one-hot target, probability mass is redistributed: the true class
+    keeps `1 - smoothing` and the remaining mass is spread uniformly over all other
+    non-padding classes.
+    """
+
+    def __init__(
+        self,
+        size: int,
+        padding_idx: int,
+        smoothing: float = 0.1,
+    ) -> None:
+        """
+        Initialize the label-smoothing criterion.
+
+        Parameters
+        ----------
+        size : int
+            Vocabulary size (number of classes).
+        padding_idx : int
+            Index of the padding token, excluded from the smoothed distribution.
+        smoothing : float, default=0.1
+            Fraction of probability mass to redistribute away from the true class.
+        """
+
+        super().__init__()
+        self.criterion: nn.KLDivLoss = nn.KLDivLoss(reduction="sum")
+        self.padding_idx: int = padding_idx
+        self.confidence: float = 1.0 - smoothing
+        self.smoothing: float = smoothing
+        self.size: int = size
+        self.true_dist: Optional[Tensor] = None
+
+    def forward(self, x: Tensor, target: Tensor) -> Tensor:
+        """
+        Compute the smoothed KL-divergence loss.
+
+        Parameters
+        ----------
+        x : Tensor
+            Log-probabilities of shape
+            (batch_size, vocab_size).
+        target : Tensor
+            Ground-truth token IDs of shape
+            (batch_size,).
+
+        Returns
+        -------
+        Tensor
+            Scalar KL-divergence loss.
+        """
+
         assert x.size(1) == self.size
-        true_dist = x.data.clone()
+
+        true_dist: Tensor = x.data.clone()
+
+        # Spread smoothing mass uniformly over all classes except the true class and
+        # padding, hence (size - 2) in the denominator
         true_dist.fill_(self.smoothing / (self.size - 2))
-        true_dist.scatter_(1, target.data.unsqueeze(1), self.confidence)
+
+        # Place the confidence value at the index of the true class for each sample in
+        # the batch. scatter_(dim, index, value) writes `value` into positions given by
+        # `index` along `dim`
+        true_dist.scatter_(
+            1,
+            target.data.unsqueeze(1),
+            self.confidence,
+        )
+
+        # Zero out the padding column so no probability mass is assigned to the padding
+        # token
         true_dist[:, self.padding_idx] = 0
-        mask = torch.nonzero(target.data == self.padding_idx)
+
+        # For samples whose target IS the padding token, zero out the entire row so they
+        # contribute nothing to the loss
+        mask: Tensor = torch.nonzero(target.data == self.padding_idx)
         if mask.dim() > 0:
             true_dist.index_fill_(0, mask.squeeze(), 0.0)
+
         self.true_dist = true_dist
-        output = self.criterion(x, true_dist.clone().detach())
+        output: Tensor = self.criterion(x, true_dist.clone().detach())
+
+        return output
+
+
+class NoamOpt:
+    """
+    Learning-rate scheduler from "Attention Is All You Need".
+
+    Implements a warmup phase where the rate increases linearly, then decays
+    proportionally to the inverse square root of the step number.
+    """
+
+    def __init__(
+        self,
+        model_size: int,
+        factor: float,
+        warmup: int,
+        optimizer: torch.optim.Optimizer,
+    ) -> None:
+        """
+        Initialize the Noam learning-rate scheduler.
+
+        Parameters
+        ----------
+        model_size : int
+            Model embedding dimension (d_model). Controls the base magnitude of the
+            learning rate.
+        factor : float
+            Multiplicative scaling factor for the rate.
+        warmup : int
+            Number of warm-up steps during which the learning rate increases linearly.
+        optimizer : torch.optim.Optimizer
+            Wrapped optimizer whose param-group learning rates will be overwritten each
+            step.
+        """
+
+        self.optimizer: torch.optim.Optimizer = optimizer
+        self._step: int = 0
+        self.warmup: int = warmup
+        self.factor: float = factor
+        self.model_size: int = model_size
+        self._rate: float = 0
+
+    def step(self) -> None:
+        """
+        Advance one training step: update the learning rate for every param group, then
+        call the underlying optimizer.
+        """
+
+        self._step += 1
+        rate: float = self.rate()
+
+        for p in self.optimizer.param_groups:
+            p["lr"] = rate
+
+        self._rate = rate
+        self.optimizer.step()
+
+    def rate(self, step: Optional[int] = None) -> float:
+        """
+        Compute the learning rate for a given step.
+
+        Parameters
+        ----------
+        step : Optional[int], default=None
+            Step number to evaluate. Uses the internal counter when None.
+
+        Returns
+        -------
+        float
+            Learning rate for the given step.
+        """
+
+        if step is None:
+            step = self._step
+
+        # The min() selects between two regimes:
+        #   step ** -0.5  — inverse-sqrt decay after
+        #                   warmup
+        #   step * warmup ** -1.5 — linear ramp during
+        #                          warmup (grows with
+        #                          step)
+        # The crossover happens exactly at step == warmup
+        output: float = self.factor * (
+            self.model_size ** (-0.5)
+            * min(
+                step ** (-0.5),
+                step * self.warmup ** (-1.5),
+            )
+        )
+
         return output
 
 
 class SimpleLossCompute:
-    def __init__(self, generator, criterion, opt=None):
-        self.generator = generator
-        self.criterion = criterion
-        self.opt = opt
+    """
+    Combines token generation, loss computation, and an optional optimizer step into a
+    single callable.
+    """
 
-    def __call__(self, x, y, norm):
+    def __init__(
+        self,
+        generator: Generator,
+        criterion: nn.Module,
+        opt: Optional[NoamOpt] = None,
+    ) -> None:
+        """
+        Initialize loss-compute helper.
+
+        Parameters
+        ----------
+        generator : Generator
+            Projects decoder output to log-probs.
+        criterion : nn.Module
+            Loss function (e.g. LabelSmoothing).
+        opt : Optional[NoamOpt], default=None
+            Learning-rate scheduler wrapping the
+            optimizer. When None, no parameter
+            update is performed (evaluation mode).
+        """
+
+        self.generator: Generator = generator
+        self.criterion: nn.Module = criterion
+        self.opt: Optional[NoamOpt] = opt
+
+    def __call__(self, x: Tensor, y: Tensor, norm: Tensor) -> float:
+        """
+        Forward + backward + optional optimizer step.
+
+        Parameters
+        ----------
+        x : Tensor
+            Decoder output of shape
+            (batch_size, seq_len, d_model).
+        y : Tensor
+            Target token IDs of shape
+            (batch_size, seq_len).
+        norm : Tensor
+            Number of non-padding tokens, used to
+            normalise the loss per real token.
+
+        Returns
+        -------
+        float
+            Total (un-normalised) loss for this batch.
+        """
+
         x = self.generator(x)
-        loss = (
-            self.criterion(x.contiguous().view(-1, x.size(-1)), y.contiguous().view(-1))
+
+        # Flatten to (batch * seq_len, vocab) and (batch * seq_len,) so the criterion
+        # sees a single list of per-token predictions
+        loss: Tensor = (
+            self.criterion(
+                x.contiguous().view(-1, x.size(-1)),
+                y.contiguous().view(-1),
+            )
             / norm
         )
+
         loss.backward()
+
         if self.opt is not None:
             self.opt.step()
             self.opt.optimizer.zero_grad()
-        return loss.data.item() * norm.float()
 
+        # Re-multiply by norm to return the total (un-normalised) loss for logging, since
+        # the division above was only for gradient scaling
+        output: float = loss.data.item() * norm.float()
 
-class NoamOpt:
-    def __init__(self, model_size, factor, warmup, optimizer):
-        self.optimizer = optimizer
-        self._step = 0
-        self.warmup = warmup
-        self.factor = factor
-        self.model_size = model_size
-        self._rate = 0
-
-    def step(self):
-        self._step += 1
-        rate = self.rate()
-        for p in self.optimizer.param_groups:
-            p["lr"] = rate
-        self._rate = rate
-        self.optimizer.step()
-
-    def rate(self, step=None):
-        if step is None:
-            step = self._step
-        output = self.factor * (
-            self.model_size ** (-0.5) * min(step ** (-0.5), step * self.warmup ** (-1.5))
-        )
         return output
 
 
@@ -916,18 +1153,25 @@ def create_model(
         Initialized transformer model on the configured device.
     """
 
+    # Create multi-head attention module with specified number of heads and model
+    # dimension
     attn: MultiHeadedAttention = MultiHeadedAttention(h, d_model).to(DEVICE)
 
+    # Create position-wise feed-forward network with specified dimensions and dropout
     ff: PositionwiseFeedForward = PositionwiseFeedForward(d_model, d_ff, dropout).to(
         DEVICE
     )
 
+    # Positional encoding module that adds sinusoidal positional information to token
+    # embeddings
     pos: PositionalEncoding = PositionalEncoding(d_model, dropout).to(DEVICE)
 
+    # Create an encoder with self-attention and feed-forward layers
     encoder: Encoder = Encoder(
         EncoderLayer(d_model, deepcopy(attn), deepcopy(ff), dropout).to(DEVICE), N
     ).to(DEVICE)
 
+    # Create a decoder with masked self-attention, cross-attention, and feed-forward layers
     decoder: Decoder = Decoder(
         DecoderLayer(d_model, deepcopy(attn), deepcopy(attn), deepcopy(ff), dropout).to(
             DEVICE
@@ -947,8 +1191,11 @@ def create_model(
         Embeddings(d_model, tgt_vocab).to(DEVICE), deepcopy(pos)
     )
 
+    # Final linear projection and softmax for generating output tokens in the target
+    # language
     generator: Generator = Generator(d_model, tgt_vocab).to(DEVICE)
 
+    # Put all components together into the full transformer model
     model: Transformer = Transformer(
         encoder=encoder,
         decoder=decoder,
@@ -957,6 +1204,7 @@ def create_model(
         generator=generator,
     ).to(DEVICE)
 
+    # Initialize model parameters with Xavier uniform initialization for weights in layers
     for p in model.parameters():
         if p.dim() > 1:
             nn.init.xavier_uniform_(p)
