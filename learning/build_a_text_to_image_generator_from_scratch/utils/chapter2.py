@@ -2,13 +2,12 @@
 from typing import List
 
 import numpy as np
-import torch
 
 # Define a constant for padding
 PAD: int = 0
 
-# Check if CUDA is available and set the device accordingly
-DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
+# Define a constant for unknown tokens
+UNK: int = 1
 
 
 def seq_padding(X: List[List[int]], padding: int = PAD) -> np.ndarray:

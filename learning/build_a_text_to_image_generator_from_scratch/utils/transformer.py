@@ -1,18 +1,23 @@
 """
-Description.
+Module containing the implementation of the transformer architecture and related 
+components.
 """
 
 # Initial imports
 import math
 from copy import deepcopy
-from typing import Callable, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
+import spacy
 import torch
 from torch import Tensor, nn
 
 # Import custom modules
-from .chapter2 import DEVICE, PAD
+from .chapter2 import PAD, UNK
+
+# Check if CUDA is available and set the device accordingly
+DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 class Batch:
@@ -722,14 +727,12 @@ class Generator(nn.Module):
         Parameters
         ----------
         x : Tensor
-            Decoder output of shape
-            (batch_size, seq_len, d_model).
+            Decoder output of shape (batch_size, seq_len, d_model).
 
         Returns
         -------
         Tensor
-            Log-probabilities of shape
-            (batch_size, seq_len, vocab).
+            Log-probabilities of shape (batch_size, seq_len, vocab).
         """
 
         out: Tensor = self.proj(x)
@@ -1041,17 +1044,28 @@ class SimpleLossCompute:
 
 
 def subsequent_mask(size: int) -> Tensor:
+    """
+    Create a causal attention mask that hides future positions.
 
-    # Define the shape of the attention mask as (1, size, size)
+    Parameters
+    ----------
+    size : int
+        Sequence length used for both mask dimensions.
+
+    Returns
+    -------
+    Tensor
+        Boolean mask of shape `(1, size, size)` where `True` marks positions that
+        may be attended to and `False` masks future tokens.
+    """
+
     attn_shape: Tuple[int, int, int] = (1, size, size)
 
-    # Triangular matrix of shape (1, size, size) with 1s in the upper triangle and 0s
-    # elsewhere
-    subsequent_mask: np.ndarray = np.triu(np.ones(attn_shape), k=1).astype("uint8")
-
-    # Convert the numpy array to a PyTorch tensor and create a boolean mask where 1s
-    # become False and 0s become True
-    output: Tensor = torch.from_numpy(subsequent_mask) == 0
+    # `torch.triu(..., diagonal=1)` marks only future positions above the main diagonal.
+    future_positions: Tensor = torch.triu(
+        torch.ones(attn_shape, device=DEVICE, dtype=torch.bool), diagonal=1
+    )
+    output: Tensor = ~future_positions
 
     return output
 
@@ -1210,3 +1224,122 @@ def create_model(
             nn.init.xavier_uniform_(p)
 
     return model.to(DEVICE)
+
+
+# Listing 2.9 Defining a function to translate German to English
+def de2en(
+    ger: str,
+    model: Transformer,
+    de_tokenizer: Any,
+    de_word_dict: Dict[str, int],
+    en_word_dict: Dict[str, int],
+    en_idx_dict: Dict[int, str],
+    unk: int = UNK,
+    device: torch.device = DEVICE,
+) -> str:
+    """
+    Translate a German sentence into English using greedy decoding.
+
+    Parameters
+    ----------
+    ger : str
+        Input German sentence to translate.
+    model : Transformer
+        Trained transformer model for translation.
+    de_tokenizer : Any
+        Tokenizer for German text.
+    de_word_dict : Dict[str, int]
+        Mapping from German tokens to their corresponding integer IDs.
+    en_word_dict : Dict[str, int]
+        Mapping from English tokens to their corresponding integer IDs.
+    en_idx_dict : Dict[int, str]
+        Mapping from English token IDs back to their string tokens.
+    unk : int, default=UNK
+        Integer ID to use for unknown tokens not found in the German word dictionary.
+    device : torch.device, default=DEVICE
+        Device to perform computations on (e.g., CPU or GPU).
+    """
+
+    # Tokenize text
+    tokenized_ger: List[str] = [tok.text for tok in de_tokenizer.tokenizer(ger)]
+
+    # Add BOS and EOS tokens to the tokenized German sentence
+    tokenized_ger: List[str] = ["BOS"] + tokenized_ger + ["EOS"]
+
+    # Get german token indexes
+    geridx: List[int] = [de_word_dict.get(i, unk) for i in tokenized_ger]
+
+    # Convert the list of German token indexes into a PyTorch tensor and move it to the
+    # specified device
+    src: torch.Tensor = torch.tensor(geridx).long().to(device).unsqueeze(0)
+
+    # Mask to ignore padding tokens in the source sequence during attention calculations
+    src_mask: torch.Tensor = (src != 0).unsqueeze(-2)
+
+    # Encode the source sequence using the model's encoder to obtain the memory
+    # representation, which will be used for decoding the English translation
+    memory: torch.Tensor = model.encode(src=src, src_mask=src_mask)
+
+    # Get the index of the start symbol (BOS) from the English word dictionary to
+    # initialize the decoding process
+    start_symbol: int = en_word_dict["BOS"]
+
+    # Initialize the target sequence with the start symbol (BOS) to begin the decoding
+    # process. This tensor will be updated iteratively to generate the English
+    # translation.
+    ys: torch.Tensor = torch.ones(1, 1).fill_(start_symbol).type_as(src.data)
+
+    # Initialize an empty list to store the translated English tokens as they are
+    # generated during the decoding process
+    translation: List[str] = []
+
+    # Maximum length of the generated translation to prevent infinite loops in case of
+    # errors
+    for i in range(100):
+
+        # Create a target mask to prevent the model from attending to future tokens
+        # during decoding. This mask ensures that the model only attends to the tokens
+        # generated so far and not to any future tokens that have not been generated yet
+        tgt_mask: torch.Tensor = subsequent_mask(ys.size(1)).type_as(src.data)
+
+        # Forward pass through the decoder to generate the output based on the encoded
+        # memory and the current target sequence (ys). The decoder uses the memory from
+        # the encoder and the target mask to produce an output that will be used to
+        # predict the next word in the translation.
+        out = model.decode(memory=memory, src_mask=src_mask, tgt=ys, tgt_mask=tgt_mask)
+
+        # Predict the next word by passing the output of the decoder through the model's
+        # generator, which produces a probability distribution over the target
+        # vocabulary. The word with the highest probability is selected as the next word
+        # in the translation.
+        prob: torch.Tensor = model.generator(out[:, -1])
+
+        # Get index of the word with the highest probability from the output of the
+        # generator, which represents the predicted next word in the English translation.
+        # This index is then used to update the target sequence for the next iteration of
+        # decoding
+        _, next_word = torch.max(prob, dim=1)
+        next_word = next_word.data[0]
+
+        # Concatenate the predicted next word to the target sequence (ys) to form the
+        # input for the next iteration of decoding. This process continues until the
+        #  model generates an end-of-sequence token (EOS) or reaches the maximum length
+        # of the translation
+        ys = torch.cat([ys, torch.ones(1, 1).type_as(src.data).fill_(next_word)], dim=1)
+
+        # Get word in target language
+        sym: str = en_idx_dict[ys[0, -1].item()]
+
+        # Stops translation when model predicts the end-of-sequence token (EOS)
+        if sym != "EOS":
+            translation.append(sym)
+        else:
+            break
+
+    # Joins the predicted tokens to form an English sentence as the translation
+    trans: str = " ".join(translation)
+
+    for x in """?:;.,'("-!&)%""":
+        trans: str = trans.replace(f" {x}", f"{x}")  # D
+
+    return trans
