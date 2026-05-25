@@ -17,12 +17,12 @@ ENV PYTHONUNBUFFERED 1
 # Ignore warning message from pip when installing packages as root.
 ENV PIP_ROOT_USER_ACTION=ignore
 
-# One line installation of zsh.
-# https://github.com/deluan/zsh-in-docker
-RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/v1.2.1/zsh-in-docker.sh)"
+# # One line installation of zsh.
+# # https://github.com/deluan/zsh-in-docker
+# RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/v1.2.1/zsh-in-docker.sh)"
 
-# ZSH is now the default shell.
-SHELL ["/usr/bin/zsh", "-c"]
+# # ZSH is now the default shell.
+# SHELL ["/usr/bin/zsh", "-c"]
 
 # Install python requirements.
 RUN pip3 install --upgrade pip && \

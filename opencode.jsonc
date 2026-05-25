@@ -1,0 +1,41 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "ollama": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Ollama Alex (local)",
+      "options": {
+        "baseURL": "http://localhost:11434/v1"
+      },
+      "models": {
+        
+        /* Approximately 9.5Gb, excellent coder, very fast. Better option for agents */
+        "qwen2.5-coder:14b-32k-context": {
+          "name": "Qwen2.5 Coder 14b with 32k context (local)",
+          "limit": {
+            "context": 32768,
+            "output": 8192
+          }
+        },
+
+        /* Approximately 4.5Gb, excellent coder, very fast. Do not reliable for agents */
+        "qwen2.5-coder:7b-32k-context": {
+          "name": "Qwen2.5 Coder 7b with 32k context (local)",
+          "limit": {
+            "context": 32768,
+            "output": 8192
+          }
+        },
+                
+        /* Approximately 5Gb, general purpose model, very fast */
+        "qwen3:8b-32k-context": {
+          "name": "Qwen3 8b with 32k context (local)",
+          "limit": {
+            "context": 32768,
+            "output": 8192
+          }
+        }
+      }
+    }
+  }
+} 

@@ -3,33 +3,12 @@
 .PHONY: build up down # Boot and halt commands
 .PHONY: compose config debug-worker jupyter logs # Debug and development commands
 
+# Include environment variables from .env file if it exists
+-include .env
+export
+
 # Suppress make's default output
 MAKEFLAGS += --no-print-directory
-
-# Project name
-PROJECT_NAME="llms-project"
-
-# Environment used in building API: development (true) or production (false)
-DEVELOPMENT=true
-
-# Environment used in building API: with gpu support (true) or without gpu support (false)
-USE_GPUS=false
-
-# Select development or production docker compose file
-ifeq ($(DEVELOPMENT),true)
-	ifeq ($(USE_GPUS),true)
-		# Development environment with gpu support.
-		COMPOSE_FILE="docker-compose-gpu.dev.yaml"
-		WORKER_SERVICE="worker-service-gpu"
-	else
-		# Development environment without gpu support.
-		COMPOSE_FILE="docker-compose.dev.yaml"
-		WORKER_SERVICE="worker-service"
-	endif
-else
-	# Not implemented yet.
-	COMPOSE_FILE="docker-compose.yaml"
-endif
 
 # Colorful output in terminal
 GREEN=\033[0;32m
@@ -56,7 +35,7 @@ help: # Show this help message
 build: # Build local micro services
 	@printf "\n" ;
 	@printf "${GREEN}Building all services ...${NC}\n" ;
-	@docker-compose --file ${COMPOSE_FILE} --project-name ${PROJECT_NAME} build ;
+	@docker-compose --file ${COMPOSE_FILE} --project-name ${PROJECT_NAME} build --no-cache --build-arg NO_PROXY=${NO_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} --build-arg HTTPS_PROXY=${HTTPS_PROXY} worker-service ;
 	@printf "${BLUE}Docker images built successfully!${NC}\n" ;
 	@printf "\n" ; 
 

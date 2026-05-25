@@ -19,7 +19,7 @@ RUN mkdir -p /llm_app/requirements
 WORKDIR /llm_app
 
 # Include requirements file
-COPY ../requirements/requirements.worker.dev.txt /llm_app/requirements/requirements.worker.dev.txt
+COPY ../requirements/requirements.worker.dev.cpu.txt /llm_app/requirements/requirements.worker.dev.cpu.txt
 
 # Prevents Python from writing pyc files to disc (equivalent to python -B option)
 ENV PYTHONDONTWRITEBYTECODE 1 \
@@ -42,9 +42,10 @@ RUN apt-get update --yes && \
         curl \
         wget \
         vim \
-        zstd \
-        git \
         vim-gtk3 \
+        zstd \
+        jq \ 
+        git \
         cmake \
         netcat-traditional \
         postgresql \
@@ -66,7 +67,7 @@ RUN apt-get update --yes && \
         torchvision==0.20.1+cpu && \
     # Install the worker service dependencies
     pip3 install --no-cache-dir -r \
-        /llm_app/requirements/requirements.worker.dev.txt && \
+        /llm_app/requirements/requirements.worker.dev.cpu.txt && \
     # Cleaning up unused files
     # This folder contains cached package lists used by apt-get, and once the packages are installed, 
     # these lists are no longer needed. Removing them helps to keep the image smaller and more efficient
@@ -88,3 +89,9 @@ ENV PATH="/home/${USER_NAME}/.local/bin:$PATH"
 
 # Switch to the worker user
 USER $USER_NAME
+
+# Install Ollama
+RUN curl -fsSL https://ollama.com/install.sh | sh
+
+# Install opencode
+RUN curl -fsSL https://opencode.ai/install | bash
