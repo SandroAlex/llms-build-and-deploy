@@ -1,1 +1,0 @@
-# Python Requirements for Microservices
