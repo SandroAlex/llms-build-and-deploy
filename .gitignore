@@ -92,6 +92,12 @@ ENV/
 env.bak/
 venv.bak/
 
+# UV cache directory
+.uv/
+
+# MLflow runtime database
+mlflow/*.db
+
 # Tabular data files.
 *.csv
 

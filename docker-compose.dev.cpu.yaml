@@ -1,83 +1,70 @@
-# Description: Docker compose configuration file for development environment
-version: "3.8"
-
-# Microservices configuration
+# Docker Compose configuration for the llmsplay CPU development environment
 services:
 
-  # RabbitMQ broker service
-  broker-service:
-    build:
-      context: .
-      dockerfile: dockerfiles/Dockerfile.rabbitmq.dev
-    ports:
-      - ${RABBITMQ_PORT}:5672
-      - ${RABBITMQ_PORT_UI}:15672
-
-  # MongoDB database service
-  database-service:
-    build:
-      context: .
-      dockerfile: dockerfiles/Dockerfile.mongodb.dev
-    ports:
-      - ${MONGODB_PORT}:27017
-
-  # Chroma vector database service
-  chroma-service:
-    build:
-      context: .
-      dockerfile: dockerfiles/Dockerfile.chroma.dev
-    ports:
-      - ${CHROMA_PORT}:8878
-    volumes:
-      - .:/llm_app       
-    networks:
-      - chroma_net
-
-  # FastAPI web tool service
-  web-service:
-    build:
-      context: .
-      dockerfile: dockerfiles/Dockerfile.fastapi.dev
-    ports:
-      - ${APP_PORT}:8000
-    volumes:
-      - .:/llm_app
-    environment:
-      - RABBITMQ_HOST=${RABBITMQ_HOST}
-    command: sleep infinity      
-    depends_on:
-      - broker-service
-      - database-service
-
-  # Hard worker service without GPU support
+  # Main development container: runs JupyterLab and Python experiments.
+  # The entire project is mounted at /llm_app so edits on the host are
+  # immediately visible inside the container without rebuilding.
+  #
+  # The `image:` tag causes Docker to store the built image under the name
+  # `llmsplay-dev-cpu`.  The mlflow-service below reuses that name directly,
+  # so the Dockerfile is only compiled ONCE even though two services share it.
   worker-service:
     build:
       context: .
-      dockerfile: dockerfiles/Dockerfile.worker.dev.cpu
+      dockerfile: Dockerfile.dev.cpu
+    image: llmsplay-dev-cpu
+    hostname: worker-host
     ports:
       - ${JUPYTER_EXTERNAL_PORT}:8888
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - MLFLOW_TRACKING_URI="sqlite:////llm_app/mlflow/database.db"
+      - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI}
+      # Tell the ollama Python client where to reach the Ollama daemon.
+      # The hostname `ollama-service` resolves inside Docker's internal network.
+      - OLLAMA_HOST=http://ollama-service:11434
     volumes:
-      - .:/llm_app      
+      - .:/llm_app
+    depends_on:
+      - ollama-service
     command: sleep infinity
 
-  # Mlflow tracking service
+  # MLflow tracking server: persists experiment runs, metrics, and artefacts
+  # in a SQLite database stored inside the project's mlflow/ directory.
+  #
+  # Uses the same image built by worker-service — no second build needed.
   mlflow-service:
-    build:
-      context: .
-      dockerfile: dockerfiles/Dockerfile.mlflow.dev
-    user: "1000:1000"
+    image: llmsplay-dev-cpu
+    hostname: mlflow-host
     ports:
       - ${MLFLOW_PORT}:5000
-    volumes:
-      - ./mlflow:/mlflow_app
     environment:
-      - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI}      
+      - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI}
+    volumes:
+      - .:/llm_app
     entrypoint: mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri ${MLFLOW_TRACKING_URI}
+    depends_on:
+      - worker-service
 
-# Networks configuration
-networks:
-  chroma_net:
-    driver: bridge    
+  # Ollama local model server: serves open-weight LLMs via a REST API on
+  # port 11434.  Models are downloaded with `ollama pull <name>` and stored
+  # in a named Docker volume so they survive container restarts without having
+  # to be re-downloaded.
+  #
+  # The standard `ollama/ollama` image runs on CPU; no GPU flag is needed here.
+  # Pull a model after `make up` with: make ollama-pull MODEL=llama3.2
+  ollama-service:
+    image: ollama/ollama
+    hostname: ollama-host
+    ports:
+      - ${OLLAMA_PORT:-11434}:11434
+    volumes:
+      # Named volume: model weights (gigabytes) are stored here and survive
+      # `docker compose down`.  Use `docker volume rm llmsplay_ollama_models`
+      # only when you explicitly want to free the disk space.
+      - ollama_models:/root/.ollama
+    restart: unless-stopped
+
+# Named volumes live outside any service and are managed by Docker directly.
+# They persist across `docker compose down` — use `down --volumes` to remove.
+volumes:
+  ollama_models:
