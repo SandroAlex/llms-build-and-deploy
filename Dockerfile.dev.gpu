@@ -1,0 +1,168 @@
+# =============================================================================
+# Stage 0 — UV binary
+# -----------------------------------------------------------------------------
+# Pull the UV package manager from its official image.
+# By treating UV as a build stage, Docker caches this download once and
+# never hits the network for it again — no `curl | sh` at build time.
+# =============================================================================
+FROM ghcr.io/astral-sh/uv:latest AS uv-binary
+
+
+# =============================================================================
+# Stage 1 — llmsplay GPU development image
+# -----------------------------------------------------------------------------
+# NVIDIA CUDA 13.0 + cuDNN 9 on Ubuntu 22.04.
+# "devel" variant ships compiler headers (nvcc, cublas-dev, …) needed to build
+# CUDA extensions.  Check the exact tag at:
+#   https://hub.docker.com/r/nvidia/cuda/tags
+# =============================================================================
+FROM nvidia/cuda:13.0.0-cudnn9-devel-ubuntu22.04
+
+
+# -----------------------------------------------------------------------------
+# Build arguments
+# -----------------------------------------------------------------------------
+# USER_NAME / USER_UID / USER_GID mirror the host user so files written to
+# the volume-mounted project directory are owned correctly on the host.
+ARG USER_NAME=worker-user
+ARG USER_UID=1000
+ARG USER_GID=1000
+
+# Silence interactive apt prompts — without this, apt may stall waiting
+# for input that will never come during an automated build.
+ARG DEBIAN_FRONTEND=noninteractive
+
+
+# -----------------------------------------------------------------------------
+# System-level packages + Python 3.11
+# -----------------------------------------------------------------------------
+# Ubuntu 22.04 ships Python 3.10 by default.  The deadsnakes PPA provides 3.11
+# without replacing the system Python, keeping the OS tools intact.
+RUN apt-get update --yes && \
+    apt-get install --yes --no-install-recommends \
+        # Required to add the deadsnakes PPA
+        software-properties-common && \
+    add-apt-repository ppa:deadsnakes/ppa && \
+    apt-get update --yes && \
+    apt-get install --yes --no-install-recommends \
+        # Python 3.11 runtime + headers for building C extensions
+        python3.11 \
+        python3.11-dev \
+        # C/C++ compiler toolchain required to build Python C extensions
+        # (e.g. numpy, scipy) and custom CUDA kernels
+        build-essential \
+        # curl — general-purpose HTTP client for testing and in-container scripts
+        curl \
+        # git — version control inside the container
+        git \
+        # vim — lightweight terminal editor for quick in-container edits
+        vim \
+        # libgomp1 — OpenMP runtime required by PyTorch CPU/GPU kernels
+        libgomp1 \
+        # graphviz — graph rendering back-end used by torchviz and similar libs
+        graphviz \
+        # jq — JSON processor for inspecting API responses in scripts
+        jq && \
+    # Register python3.11 as the default `python3` and `python` so that uv
+    # and other tools pick it up without an explicit path.
+    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 && \
+    update-alternatives --install /usr/bin/python  python  /usr/bin/python3.11 1 && \
+    # Remove apt package lists.  They are only needed during install;
+    # deleting them shrinks the image by ~40 MB.
+    rm -rf /var/lib/apt/lists/*
+
+
+# -----------------------------------------------------------------------------
+# UV package manager (from Stage 0 — no network required)
+# -----------------------------------------------------------------------------
+# Copy the UV binary into a system-wide path.  Because Stage 0 is cached by
+# Docker, this COPY never incurs a network round-trip after the first build.
+COPY --from=uv-binary /uv /usr/local/bin/uv
+
+
+# -----------------------------------------------------------------------------
+# Python runtime settings
+# -----------------------------------------------------------------------------
+ENV \
+    # Prevent Python from writing .pyc files — keeps the volume mount clean.
+    PYTHONDONTWRITEBYTECODE=1 \
+    # Flush stdout/stderr immediately so logs appear in `docker compose logs`.
+    PYTHONUNBUFFERED=1 \
+    # Place the virtual environment at a fixed path outside /llm_app so that
+    # it lives in the image layer and is never shadowed by the host volume mount.
+    UV_PROJECT_ENVIRONMENT=/opt/venv \
+    # Tell uv where to store its download cache.  The path is referenced by
+    # the BuildKit cache mount in the dependency install step below.
+    UV_CACHE_DIR=/home/${USER_NAME}/.cache/uv \
+    # Make `import llmsplay` work from any working directory without
+    # activating the virtual environment explicitly.
+    PYTHONPATH=/llm_app \
+    # Expose all available GPUs to the container runtime.
+    NVIDIA_VISIBLE_DEVICES=all \
+    # Grant access to CUDA compute and utility (nvidia-smi) capabilities.
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+
+# -----------------------------------------------------------------------------
+# Non-root user  ← created BEFORE uv sync — this is intentional and critical
+# -----------------------------------------------------------------------------
+# Creating the user HERE (before the Python dependency install) means that
+# /opt/venv is owned by the correct user from the moment uv creates it.
+#
+# The naive alternative — creating the user AFTER uv sync and then running
+# `chown -R user /opt/venv` — forces Docker to walk every file on its overlay
+# filesystem, which takes 30+ minutes for a stack that includes PyTorch
+# (~10 000 files).  By owning the directory upfront we eliminate that step
+# entirely.
+RUN groupadd --gid ${USER_GID} ${USER_NAME} && \
+    useradd  --uid ${USER_UID} --gid ${USER_GID} --create-home ${USER_NAME} && \
+    # Passwordless sudo lets the developer install ad-hoc tools or run system
+    # commands during exploratory sessions without leaving the container.
+    echo "%sudo ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers && \
+    adduser ${USER_NAME} sudo && \
+    # Pre-create the venv and project directories with the correct owner.
+    # This means no recursive chown is needed after the dependency install.
+    mkdir -p /opt/venv /llm_app && \
+    chown ${USER_NAME}:${USER_NAME} /opt/venv /llm_app
+
+# All subsequent layers and the running container use the non-root user.
+USER ${USER_NAME}
+WORKDIR /llm_app
+
+
+# -----------------------------------------------------------------------------
+# Python dependencies
+# -----------------------------------------------------------------------------
+# Copy only the dependency manifest (not the full source tree).
+# Keeping this COPY separate from application code means Docker can cache
+# the install layer below and skip it entirely when only notebooks or Python
+# files change — only a pyproject.toml change will trigger a re-install.
+COPY --chown=${USER_NAME}:${USER_NAME} pyproject.toml /llm_app/
+
+# Install GPU-variant dependencies into the dedicated virtual environment.
+#
+#   --mount=type=cache
+#     Persists the uv wheel and metadata cache on the host between builds.
+#     Even when this layer is invalidated (e.g. after changing pyproject.toml),
+#     wheels that were already downloaded are served from the host cache
+#     instead of being re-fetched from PyPI or the PyTorch index.
+#     Result: after the first build, only changed packages are downloaded.
+#
+#   --extra gpu
+#     Activates the [gpu] optional dependency group, which routes torch,
+#     torchvision, and torchaudio to the CUDA-enabled PyTorch wheel index.
+#
+#   --no-install-project
+#     Skips installing the llmsplay package itself — the live source code is
+#     provided at runtime via the host volume mount at /llm_app, so an editable
+#     install is not needed and would be overridden anyway.
+RUN --mount=type=cache,target=/home/${USER_NAME}/.cache/uv,uid=${USER_UID},gid=${USER_GID} \
+    uv sync --extra gpu --no-install-project
+
+
+# -----------------------------------------------------------------------------
+# PATH
+# -----------------------------------------------------------------------------
+# Expose venv binaries (python, jupyter, mlflow, ruff, pytest, …) and the
+# user's local bin for tools installed later with `uv pip install --user`.
+ENV PATH="/opt/venv/bin:/home/${USER_NAME}/.local/bin:$PATH"
