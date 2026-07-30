@@ -11,7 +11,7 @@ dependencies = [
     "langgraph>=0.2",
 
     # Experiment tracking
-    "mlflow>=2.0",
+    "mlflow>=3.0",
 
     # Ollama Python client — communicates with the ollama-service container
     "ollama>=0.3",
@@ -30,7 +30,8 @@ dev = [
     "jupyterlab>=4.0",
     "ipywidgets>=8.1.8",
     "matplotlib>=3.11.0",
-    "seaborn>=0.13.2"
+    "seaborn>=0.13.2",
+    "ruff>=0.16.0",
 ]
 
 [project.optional-dependencies]
@@ -88,7 +89,11 @@ packages = ["llmsplay"]
 
 [tool.ruff]
 target-version = "py311"
-line-length = 100
+line-length = 90 # Default line length is 88
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
+
+[tool.ruff.format]
+quote-style = "double"  # Options: "single", "double", or "preserve"
+indent-style = "space"  # Options: "tab", "space"
