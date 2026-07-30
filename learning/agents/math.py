@@ -1,3 +1,7 @@
+"""
+Math agent very simple test using langchain tools and mlflow. It will calculate the power 
+of two numbers and record all reasoning steps in mlflow.
+"""
 
 # Initial imports
 #########################################################################################
@@ -19,12 +23,16 @@ from langchain.agents import create_agent
 MODEL: str = "gpt-5-nano"
 TEMPERATURE: float = 0.0
 DEBUG: bool = True
-NAME: str = "Math Agent Ted"
+NAME: str = "math-agent-ted"
 SYSTEM_PROMPT: str = "You are a helpful assistant that can do math calculations."
-QUERY: str = "Please calculate for me the power of 10 and 3. Give me the result in a json format."
+QUERY: str = (
+    "Please calculate for me the power of 10 and 3. Give me the result in a json format."
+)
 
 # Mlflow parameters
-TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", "sqlite:////llm_app/mlflow/database.db")
+TRACKING_URI = os.environ.get(
+    "MLFLOW_TRACKING_URI", "sqlite:////llm_app/mlflow/database.db"
+)
 EXPERIMENT_NAME = "Math Agent Test"
 #########################################################################################
 
@@ -40,18 +48,19 @@ mlflow.langchain.autolog()
 mlflow.openai.autolog()
 #########################################################################################
 
+
 # Tools definition
 #########################################################################################
 @tool
 def calculate_power(input: str) -> Dict[str, Union[float, str]]:
     """
-    Calculates the power of a number (x ** y). Input should be two numbers: base and 
+    Calculates the power of a number (x ** y). Input should be two numbers: base and
     exponent.
 
     Paramters
     ----------
     input : str
-        The input string containing the number and the power. 
+        The input string containing the number and the power.
 
     Returns
     -------
@@ -73,24 +82,26 @@ def calculate_power(input: str) -> Dict[str, Union[float, str]]:
     """
 
     try:
-
         # Extract all numbers from the input as a list of floats
-        numbers: List[float] = [float(num) for num in re.findall(r'\d+', input)]
-        
+        numbers: List[float] = [float(num) for num in re.findall(r"\d+", input)]
+
         # If the list of numbers has not 2 elements, return an error
         if len(numbers) != 2:
-            return {"result": "Invalid input. Provide just two numbers to calculate the power."}
+            return {
+                "result": "Invalid input. Provide just two numbers to calculate the power."
+            }
 
         # Calculate the power of the two numbers
         base: float = numbers[0]
         exponent: float = numbers[1]
-        result: float = base ** exponent
-        
+        result: float = base**exponent
+
         return {"result": result}
 
     # If the input is not a valid number, return an error
     except Exception as e:
         return {"result": f"Error: {e}"}
+
 
 # All available tools
 tools: List[StructuredTool] = [calculate_power]
@@ -105,31 +116,28 @@ llm_model = ChatOpenAI(model=MODEL, temperature=TEMPERATURE)
 # Agent initialization
 #########################################################################################
 agent = create_agent(
-    model=llm_model,
-    tools=tools,
-    debug=DEBUG,
-    name=NAME,
-    system_prompt=SYSTEM_PROMPT
+    model=llm_model, tools=tools, debug=DEBUG, name=NAME, system_prompt=SYSTEM_PROMPT
 )
 #########################################################################################
 
 # Main code
 #########################################################################################
 with mlflow.start_run(run_name="power-calculation"):
-      
-      # Record the parameters
-      mlflow.log_params({
-          "model": MODEL,
-          "temperature": TEMPERATURE,
-          "agent_name": NAME,
-          "system_prompt": SYSTEM_PROMPT,
-          "query": QUERY,
-      })
+    # Record the parameters
+    mlflow.log_params(
+        {
+            "model": MODEL,
+            "temperature": TEMPERATURE,
+            "agent_name": NAME,
+            "system_prompt": SYSTEM_PROMPT,
+            "query": QUERY,
+        }
+    )
 
-      # Invoke the agent
-      result: Dict[str, Any]  = agent.invoke(
-          {"messages": [{"role": "user", "content": QUERY}]},
-      )
-    
-      print(result)
+    # Invoke the agent
+    result: Dict[str, Any] = agent.invoke(
+        {"messages": [{"role": "user", "content": QUERY}]},
+    )
+
+    print(result)
 #########################################################################################
