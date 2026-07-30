@@ -41,7 +41,7 @@ services:
       - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI}
     volumes:
       - .:/llm_app
-    entrypoint: mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri ${MLFLOW_TRACKING_URI}
+    entrypoint: uv run mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri ${MLFLOW_TRACKING_URI}
     depends_on:
       - worker-service
 
