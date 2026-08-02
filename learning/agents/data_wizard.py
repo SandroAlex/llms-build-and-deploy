@@ -7,6 +7,7 @@ natural language.
 #########################################################################################
 import glob
 import os
+import mlflow
 
 import matplotlib
 import seaborn
@@ -18,13 +19,53 @@ import langchain_openai
 import numpy as np
 import pandas as pd
 
+from pathlib import Path
 from typing import List, Optional, Dict, Any, Callable, Union
+
+from langchain_classic.agents import create_openai_tools_agent, AgentExecutor
 from langchain_core.tools import tool
 from langchain_core.tools.structured import StructuredTool
+from langchain_core.prompts import ChatPromptTemplate
+from langchain.chat_models import init_chat_model
+
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.metrics import accuracy_score, r2_score, mean_squared_error
 
+#########################################################################################
+
+# Execution parameters
+#########################################################################################
+# Folder with .csv files
+DATASET_FOLDER: str = str(Path(__file__).parent / "data")
+
+# OpenAI model
+MODEL: str = "gpt-4o-mini"
+
+# Define agent scope and purpose
+SYSTEM_PROMPT: str = (
+    "You are a data science assistant. Use the available tools to analyze CSV files. "
+    "Your job is to determine whether each dataset is for classification or regression, "
+    "based on its structure."
+)
+
+# Mlflow parameters
+TRACKING_URI = os.environ.get(
+    "MLFLOW_TRACKING_URI", "sqlite:////llm_app/mlflow/database.db"
+)
+EXPERIMENT_NAME = "Data Wizard Agent Test"
+#########################################################################################
+
+# Mlflow setup
+#########################################################################################
+mlflow.set_tracking_uri(TRACKING_URI)
+mlflow.set_experiment(EXPERIMENT_NAME)
+
+# Captures LLM calls, tool calls, chain/graph steps as nested spans
+mlflow.langchain.autolog()
+
+# Optional: also trace raw OpenAI HTTP calls (token usage, latency)
+mlflow.openai.autolog()
 #########################################################################################
 
 
@@ -352,13 +393,51 @@ tools: List[StructuredTool] = [
 
 # Main code
 #########################################################################################
-# Print all available tools information
-print("\n>>> Available tools:")
-for tool in tools:
-    print(f"\n- Tool name: {tool.name}\n- Tool description:\n\n{tool.description}\n")
-
 # Initialize a dictionary to store the cached datasets. It must live outside any
 # function. It creates a persistent storage space that all tools can access without
 # explicitly passing it around.
 DATAFRAME_CACHE: Dict[str, pd.DataFrame] = {}
+
+# Structures prompt with essential components
+prompt = ChatPromptTemplate.from_messages(
+    [
+        ("system", SYSTEM_PROMPT),
+        ("user", "{input}"),
+        ("placeholder", "{agent_scratchpad}"),  # Required for tool-calling agents
+    ]
+)
+
+# Large Language Model
+llm = init_chat_model(model=MODEL, model_provider="openai", streaming=False)
+
+# This raw agent has significant limitations when used directly. It only performs a
+# single step of reasoning and tool usage per invocation, then returns its intermediate
+# thought process rather than a final answer. This behavior occurs because the agent
+# doesn't automatically manage the full loop of thinking, acting, observing results, and
+# continuing to reason until reaching a complete solution.
+agent = create_openai_tools_agent(llm=llm, tools=tools, prompt=prompt)
+
+# Creates a complete, autonomous agent system by wrapping your basic agent with
+# additional functionality.
+agent_executor = AgentExecutor(
+    agent=agent, tools=tools, verbose=True, handle_parsing_errors=True
+)
+
+# Disables streaming mode for the agent
+agent_executor.agent.stream_runnable = False
+
+print("\n📊 Ask questions about your dataset (type 'exit' or 'quit' to quit):")
+print(
+    f" Example: Can you list for me all datasets available in {DATASET_FOLDER} folder?\n"
+)
+
+while True:
+    user_input = input(" You: ")
+    if user_input.strip().lower() in ["exit", "quit"]:
+        print("see ya later")
+        break
+
+    result = agent_executor.invoke({"input": user_input})
+
+    print(f" Agent: {result['output']}")
 #########################################################################################
