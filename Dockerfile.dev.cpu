@@ -46,6 +46,8 @@ RUN apt-get update --yes && \
         build-essential \
         # curl — general-purpose HTTP client for testing and in-container scripts
         curl \
+        # wget — for downloading files from the internet
+        wget \
         # git — version control inside the container
         git \
         # vim — lightweight terminal editor for quick in-container edits
@@ -55,7 +57,9 @@ RUN apt-get update --yes && \
         # graphviz — graph rendering back-end used by torchviz and similar libs
         graphviz \
         # jq — JSON processor for inspecting API responses in scripts
-        jq && \
+        jq \
+        # sudo — for running commands as root
+        sudo && \
     # Remove apt package lists.  They are only needed during install;
     # deleting them shrinks the image by ~40 MB.
     rm -rf /var/lib/apt/lists/*
