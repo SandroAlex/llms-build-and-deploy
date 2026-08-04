@@ -122,22 +122,10 @@ agent = create_agent(
 
 # Main code
 #########################################################################################
-with mlflow.start_run(run_name="power-calculation"):
-    # Record the parameters
-    mlflow.log_params(
-        {
-            "model": MODEL,
-            "temperature": TEMPERATURE,
-            "agent_name": NAME,
-            "system_prompt": SYSTEM_PROMPT,
-            "query": QUERY,
-        }
-    )
+# Invoke the agent
+result: Dict[str, Any] = agent.invoke(
+    {"messages": [{"role": "user", "content": QUERY}]},
+)
 
-    # Invoke the agent
-    result: Dict[str, Any] = agent.invoke(
-        {"messages": [{"role": "user", "content": QUERY}]},
-    )
-
-    print(result)
+print(result)
 #########################################################################################
