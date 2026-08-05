@@ -1,3 +1,7 @@
+"""
+This script shows a simple parsing and validation of tool calls in a chat history.
+"""
+
 # Initial imports
 #########################################################################################
 import os
@@ -165,4 +169,8 @@ print(f">>> Tool response (type is {type(tool_response)}): {tool_response}")
 # Append the response to the chat history
 chat_history.append(response_1)
 chat_history.append(tool_message)
+
+# Generate a final answer from chat history
+answer: AIMessage = llm_with_tools.invoke(chat_history)
+print(f"\n>>> Answer (type is {type(answer)}): {answer}")
 #########################################################################################
