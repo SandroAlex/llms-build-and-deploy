@@ -1,6 +1,6 @@
 [project]
 name = "llmsplay"
-version = "2026.7.0"
+version = "2026.8.0"
 description = "Personal playground for learning LLMs, Transformers, and AI agents"
 requires-python = ">=3.11"
 dependencies = [
@@ -26,21 +26,21 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "black>=26.5.1",
-    "pytest>=9.1.0",
-    "jupyterlab>=4.0",
-    "ipywidgets>=8.1.8",
-    "matplotlib>=3.11.0",
-    "seaborn>=0.13.2",
-    "ruff>=0.16.0",
+    "black==26.5.1",
+    "pytest==9.1.0",
+    "jupyterlab==4.5.8",
+    "ipywidgets==8.1.8",
+    "matplotlib==3.11.0",
+    "seaborn==0.13.2",
+    "ruff==0.16.0",
 ]
 
 [project.optional-dependencies]
 cpu = [
-    "torch>=2.5",
-    "torchvision>=0.20",
-    "torchaudio>=2.5",
-    "lightning>=2.4",
+    "torch==2.12.0",
+    "torchvision==0.27.0",
+    "torchaudio==2.11.0",
+    "lightning==2.6.5",
 ]
 gpu = [
     "torch>=2.5",
