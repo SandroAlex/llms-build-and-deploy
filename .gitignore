@@ -116,3 +116,6 @@ gpt2-from-scratch/
 # Archifacts from code.
 loss-plot.pdf
 temperature-plot.pdf
+
+# Local secrets (cookies, credentials) - never commit
+secrets/
