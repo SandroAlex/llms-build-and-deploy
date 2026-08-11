@@ -22,6 +22,9 @@ services:
       # Tell the ollama Python client where to reach the Ollama daemon.
       # The hostname `ollama-service` resolves inside Docker's internal network.
       - OLLAMA_HOST=http://ollama-service:11434
+      # Netscape-format cookies.txt (exported from a logged-in YouTube session)
+      # used by yt-dlp in lab4_video.py to reduce bot-detection blocks
+      - YT_DLP_COOKIES_FILE=${YT_DLP_COOKIES_FILE}
     volumes:
       - .:/llm_app
     depends_on:
