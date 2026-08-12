@@ -7,30 +7,27 @@ natural language.
 #########################################################################################
 import glob
 import os
-import mlflow
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Union
 
+import langchain
+import langchain_openai
 import matplotlib
+import numpy as np
+import openai
+import pandas as pd
 import seaborn
 import sklearn
-import langchain
-import openai
-import langchain_openai
-
-import numpy as np
-import pandas as pd
-
-from pathlib import Path
-from typing import List, Optional, Dict, Any, Callable, Union
-
-from langchain_classic.agents import create_openai_tools_agent, AgentExecutor
+from langchain.chat_models import init_chat_model
+from langchain_classic.agents import AgentExecutor, create_openai_tools_agent
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import tool
 from langchain_core.tools.structured import StructuredTool
-from langchain_core.prompts import ChatPromptTemplate
-from langchain.chat_models import init_chat_model
-
-from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.metrics import accuracy_score, r2_score, mean_squared_error
+from sklearn.metrics import accuracy_score, mean_squared_error, r2_score
+from sklearn.model_selection import train_test_split
+
+import mlflow
 
 #########################################################################################
 

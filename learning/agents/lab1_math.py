@@ -1,20 +1,22 @@
 """
-Math agent very simple test using langchain tools and mlflow. It will calculate the power 
+Math agent very simple test using langchain tools and mlflow. It will calculate the power
 of two numbers and record all reasoning steps in mlflow.
 """
+
+import os
 
 # Initial imports
 #########################################################################################
 import re
-import os
-import mlflow
+from typing import Any, Dict, List, Union
 
-from typing import List, Dict, Union, Any
-
-from langchain_openai import ChatOpenAI
+from langchain.agents import create_agent
 from langchain_core.tools import tool
 from langchain_core.tools.structured import StructuredTool
-from langchain.agents import create_agent
+from langchain_openai import ChatOpenAI
+
+import mlflow
+
 #########################################################################################
 
 # Execution parameters

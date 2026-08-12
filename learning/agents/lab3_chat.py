@@ -5,14 +5,15 @@ This script shows a simple parsing and validation of tool calls in a chat histor
 # Initial imports
 #########################################################################################
 import os
-import mlflow
-
-from typing import Any, List, Dict, Callable
+from typing import Any, Callable, Dict, List
 
 from langchain.chat_models import init_chat_model
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import tool
-from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
-from langchain_core.tools.structured import StructuredTool  
+from langchain_core.tools.structured import StructuredTool
+
+import mlflow
+
 #########################################################################################
 
 # Execution parameters
@@ -41,13 +42,14 @@ mlflow.langchain.autolog()
 mlflow.openai.autolog()
 #########################################################################################
 
+
 # Tools definition
 #########################################################################################
 @tool
 def add(a: int, b: int) -> int:
     """
     Add a and b.
-    
+
     Parameters
     ----------
     a : int
@@ -63,11 +65,12 @@ def add(a: int, b: int) -> int:
 
     return a + b
 
+
 @tool
 def subtract(a: int, b: int) -> int:
     """
     Subtract b from a.
-    
+
     Parameters
     ----------
     a : int
@@ -83,11 +86,12 @@ def subtract(a: int, b: int) -> int:
 
     return a - b
 
+
 @tool
 def multiply(a: int, b: int) -> int:
     """
     Multiply a and b.
-    
+
     Parameters
     ----------
     a : int
@@ -103,6 +107,7 @@ def multiply(a: int, b: int) -> int:
 
     return a * b
 
+
 # Tools list
 tools: List[StructuredTool] = [add, subtract, multiply]
 #########################################################################################
@@ -116,11 +121,7 @@ llm = init_chat_model(model=MODEL, model_provider=MODEL_PROVIDER)
 llm_with_tools = llm.bind_tools(tools)
 
 # Test the tools
-tool_map: Dict[str, Callable] = {
-    "add": add,
-    "subtract": subtract,
-    "multiply": multiply
-}
+tool_map: Dict[str, Callable] = {"add": add, "subtract": subtract, "multiply": multiply}
 
 # Default inputs
 input_values: Dict[str, int] = {
@@ -134,16 +135,17 @@ expected_outputs: Dict[str, int] = {
     "multiply": 200,
 }
 
-# Test the tools    
+# Test the tools
 print("\n>>> Testing tools ...")
 for tool_name in tool_map.keys():
-
     expected_output: int = expected_outputs[tool_name]
     tool: Callable = tool_map[tool_name]
     result: int = tool.invoke(input_values)
-    
+
     assert result == expected_output
-    print(f"\t - {tool_name} tested successfully with result {result} and expected output {expected_output}")
+    print(
+        f"\t - {tool_name} tested successfully with result {result} and expected output {expected_output}"
+    )
 
 print(">>> All tools tested successfully!")
 
@@ -162,7 +164,9 @@ tool_call_1_id: str = tool_calls_1[0]["id"]
 
 # Given the tool call details from the LLM, invoke the correct tool with the correct arguments.
 tool_response: int = tool_map[tool_1_name].invoke(tool_1_args)
-tool_message: ToolMessage = ToolMessage(content=tool_response, tool_call_id=tool_call_1_id)
+tool_message: ToolMessage = ToolMessage(
+    content=tool_response, tool_call_id=tool_call_1_id
+)
 
 print(f">>> Tool response (type is {type(tool_response)}): {tool_response}")
 
