@@ -13,8 +13,8 @@ import spacy
 import torch
 from torch import Tensor, nn
 
-# Import custom modules
-from .chapter2 import PAD, UNK
+# Customized imports
+from llmsplay.sequences import PAD, UNK
 
 # Check if CUDA is available and set the device accordingly
 DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
