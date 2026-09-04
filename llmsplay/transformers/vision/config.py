@@ -1,18 +1,15 @@
-
-
 # Listing 3.1 Setting model hyperparameters
 class VisionTransformConfig:
 
-    patch_size: int = 4     # Each image patch has a height and width of 4 pixels
-    hidden_size: int = 48   # Each image patch is converted to a 48-value tensor
+    patch_size: int = 4  # Each image patch has a height and width of 4 pixels
+    hidden_size: int = 48  # Each image patch is converted to a 48-value tensor
     num_hidden_layers: int = 4
     num_attention_heads: int = 4
     intermediate_size: int = 4 * 48
     image_size: int = 32
-    num_classes: int = 10 
+    num_classes: int = 10
     num_channels: int = 3
 
-    
     def __repr__(self) -> None:
         """
         String representation of the configuration

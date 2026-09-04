@@ -1,5 +1,5 @@
 """
-Module containing the implementation of the transformer architecture and related 
+Module containing the implementation of the transformer architecture and related
 components.
 """
 
