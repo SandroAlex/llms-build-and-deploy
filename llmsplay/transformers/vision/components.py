@@ -1,7 +1,11 @@
 # Initial imports
+from typing import Optional, Tuple, List
+
 import math
 import torch
+
 from torch import nn
+from torch import Tensor
 
 # Check if CUDA is available and set the device accordingly
 DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
@@ -53,16 +57,16 @@ class PatchEmbeddings(nn.Module):
             stride=config.patch_size,
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         """
         Parameters
         ----------
-        x : torch.Tensor
+        x : Tensor
             Input images of shape (batch, num_channels, height, width).
 
         Returns
         -------
-        torch.Tensor
+        Tensor
             Patch embeddings of shape (batch, num_patches, hidden_size) where
             num_patches = (H // patch_size) * (W // patch_size).
         """
@@ -78,6 +82,7 @@ class PatchEmbeddings(nn.Module):
         return x
 
 
+# Listing 3.3 Adding positional encoding to the image embedding
 class Embeddings(nn.Module):
     """
     Builds the input sequence for the transformer encoder from an image: splits the image
@@ -121,7 +126,7 @@ class Embeddings(nn.Module):
             torch.randn(1, num_patches + 1, config.hidden_size)
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: Tensor) -> Tensor:
 
         # (batch, num_patches, hidden_size)
         x = self.patch_embeddings(x)
@@ -139,49 +144,119 @@ class Embeddings(nn.Module):
         return x
 
 
+# Listing 3.4 Calculating self-attention in each attention head
 class AttentionHead(nn.Module):
-    def __init__(self, hidden_size, attention_head_size, bias=True):
+    """
+    A single self-attention head: learns query, key, and value projections and uses them
+    to let each token in the sequence attend to every other token.
+    """
+
+    def __init__(
+        self, hidden_size: int, attention_head_size: int, bias: bool = True
+    ) -> None:
+        """
+        Parameters
+        ----------
+        hidden_size : int
+            Dimensionality of the input token embeddings.
+        attention_head_size : int
+            Dimensionality of this head's query, key, and value projections.
+        bias : bool, default=True
+            Whether the query, key, and value linear layers learn a bias term.
+        """
+
         super().__init__()
         self.hidden_size = hidden_size
         self.attention_head_size = attention_head_size
+
+        # Linear projections that map each token embedding into this head's
+        # query, key, and value spaces
         self.query = nn.Linear(hidden_size, attention_head_size, bias=bias)
         self.key = nn.Linear(hidden_size, attention_head_size, bias=bias)
         self.value = nn.Linear(hidden_size, attention_head_size, bias=bias)
 
-    def forward(self, x):
-        query = self.query(x)
-        key = self.key(x)
-        value = self.value(x)
-        attention_scores = torch.matmul(query, key.transpose(-1, -2))
-        attention_scores = attention_scores / math.sqrt(self.attention_head_size)
-        attention_probs = nn.functional.softmax(attention_scores, dim=-1)
-        attention_output = torch.matmul(attention_probs, value)
+    def forward(self, x: Tensor) -> Tuple[Tensor, Tensor]:
+
+        # Project the input into query, key, and value vectors
+        query: Tensor = self.query(x)
+        key: Tensor = self.key(x)
+        value: Tensor = self.value(x)
+
+        # Dot product of each query with every key gives a raw similarity score between
+        # every pair of tokens
+        attention_scores: Tensor = torch.matmul(query, key.transpose(-1, -2))
+
+        # Scale down scores to keep gradients stable as head size grows
+        attention_scores: Tensor = attention_scores / math.sqrt(self.attention_head_size)
+
+        # Normalize scores into probabilities over the tokens attended to
+        attention_probs: Tensor = nn.functional.softmax(attention_scores, dim=-1)
+
+        # Weighted sum of value vectors, weighted by the attention probabilities
+        attention_output: Tensor = torch.matmul(attention_probs, value)
+
         return (attention_output, attention_probs)
 
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, config):
+    """
+    Runs several 'AttentionHead' instances in parallel over the same input, then
+    concatenates and projects their outputs back to 'hidden_size'. Splitting attention
+    into multiple heads lets the model attend to different kinds of relationships
+    between tokens at once.
+    """
+
+    def __init__(self, config: VisionTransformConfig) -> None:
+        """
+        Parameters
+        ----------
+        config : object
+            Must expose 'hidden_size' and 'num_attention_heads' attributes.
+        """
+
         super().__init__()
         self.hidden_size = config.hidden_size
         self.num_attention_heads = config.num_attention_heads
+
+        # Size of each individual head's query/key/value projections, so that all heads
+        # combined add back up to 'hidden_size'
         self.attention_head_size = self.hidden_size // self.num_attention_heads
+
+        # Combined width of all heads' outputs once concatenated
         self.all_head_size = self.num_attention_heads * self.attention_head_size
+
+        # One independent 'AttentionHead' per attention head
         self.heads = nn.ModuleList([])
         for _ in range(self.num_attention_heads):
-            head = AttentionHead(self.hidden_size, self.attention_head_size)
+            head = AttentionHead(
+                hidden_size=self.hidden_size, attention_head_size=self.attention_head_size
+            )
             self.heads.append(head)
+
+        # Projects the concatenated head outputs back to hidden_size
         self.output_projection = nn.Linear(self.all_head_size, self.hidden_size)
 
-    def forward(self, x, output_attentions=False):
-        attention_outputs = [head(x) for head in self.heads]
-        attention_output = torch.cat(
+    def forward(
+        self, x: Tensor, output_attentions: bool = False
+    ) -> Tuple[Tensor, Optional[Tensor]]:
+
+        # Run every head on the same input independently
+        attention_outputs: List[Tuple[Tensor, Tensor]] = [head(x) for head in self.heads]
+
+        # Concatenate all heads' outputs along the feature dimension
+        attention_output: Tensor = torch.cat(
             [attention_output for attention_output, _ in attention_outputs], dim=-1
         )
-        attention_output = self.output_projection(attention_output)
+
+        # Mix the concatenated heads back into a single 'hidden_size' representation
+        attention_output: Tensor = self.output_projection(attention_output)
+
         if not output_attentions:
             return (attention_output, None)
         else:
-            attention_probs = torch.stack(
+            # Stack each head's attention probabilities into one tensor, useful for
+            # inspecting or visualizing what each head attended to
+            attention_probs: Tensor = torch.stack(
                 [attention_probs for _, attention_probs in attention_outputs], dim=1
             )
             return (attention_output, attention_probs)
