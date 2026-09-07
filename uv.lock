@@ -2093,7 +2093,7 @@ wheels = [
 
 [[package]]
 name = "llmsplay"
-version = "2026.8.0"
+version = "2026.9.0"
 source = { editable = "." }
 dependencies = [
     { name = "langchain" },
@@ -2135,6 +2135,7 @@ dev = [
     { name = "pytest" },
     { name = "ruff" },
     { name = "seaborn" },
+    { name = "tokenize-rt" },
 ]
 
 [package.metadata]
@@ -2170,6 +2171,7 @@ dev = [
     { name = "pytest", specifier = "==9.1.0" },
     { name = "ruff", specifier = "==0.16.0" },
     { name = "seaborn", specifier = "==0.13.2" },
+    { name = "tokenize-rt", specifier = "==6.2.0" },
 ]
 
 [[package]]
@@ -4752,6 +4754,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/a3/ae/2ca4913e5c0f09781d75482874c3a95db9105462a92ddd303c7d285d3df2/tinycss2-1.5.1.tar.gz", hash = "sha256:d339d2b616ba90ccce58da8495a78f46e55d4d25f9fd71dfd526f07e7d53f957", size = 88195, upload-time = "2025-11-23T10:29:10.082Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/60/45/c7b5c3168458db837e8ceab06dc77824e18202679d0463f0e8f002143a97/tinycss2-1.5.1-py3-none-any.whl", hash = "sha256:3415ba0f5839c062696996998176c4a3751d18b7edaaeeb658c9ce21ec150661", size = 28404, upload-time = "2025-11-23T10:29:08.676Z" },
+]
+
+[[package]]
+name = "tokenize-rt"
+version = "6.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/69/ed/8f07e893132d5051d86a553e749d5c89b2a4776eb3a579b72ed61f8559ca/tokenize_rt-6.2.0.tar.gz", hash = "sha256:8439c042b330c553fdbe1758e4a05c0ed460dbbbb24a606f11f0dee75da4cad6", size = 5476, upload-time = "2025-05-23T23:48:00.035Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/33/f0/3fe8c6e69135a845f4106f2ff8b6805638d4e85c264e70114e8126689587/tokenize_rt-6.2.0-py2.py3-none-any.whl", hash = "sha256:a152bf4f249c847a66497a4a95f63376ed68ac6abf092a2f7cfb29d044ecff44", size = 6004, upload-time = "2025-05-23T23:47:58.812Z" },
 ]
 
 [[package]]
