@@ -1,16 +1,44 @@
+"""
+Hyperparameters for the Vision Transformer defined in 'components.py'.
+
+Holds every value the ViT modules need to size their layers (patch size, hidden size,
+number of transformer blocks/heads, etc.), tuned here for training on CIFAR-10-sized
+(32x32, 3-channel) images.
+"""
+
+
 # Listing 3.1 Setting model hyperparameters
 class VisionTransformConfig:
+    """
+    Plain container of Vision Transformer hyperparameters, consumed by the 'nn.Module'
+    classes in 'components.py'.
+    """
 
-    patch_size: int = 4  # Each image patch has a height and width of 4 pixels
-    hidden_size: int = 48  # Each image patch is converted to a 48-value tensor
+    # Height and width (in pixels) of each square image patch
+    patch_size: int = 4
+
+    # Dimensionality every patch is projected to (the transformer's embedding size)
+    hidden_size: int = 48
+
+    # Number of stacked transformer blocks in the encoder
     num_hidden_layers: int = 4
+
+    # Number of self-attention heads per multi-head attention layer
     num_attention_heads: int = 4
+
+    # Width of the MLP's hidden layer inside each transformer block
     intermediate_size: int = 4 * 48
+
+    # Height and width (in pixels) of the (square) input images
     image_size: int = 32
+
+    # Number of output classes for the classifier head
     num_classes: int = 10
+
+    # Number of color channels in the input images (3 for RGB)
     num_channels: int = 3
 
-    def __repr__(self) -> None:
+    def __repr__(self) -> str:
         """
         String representation of the configuration
         """

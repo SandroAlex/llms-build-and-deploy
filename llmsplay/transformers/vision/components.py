@@ -1,3 +1,12 @@
+"""
+Building blocks of a Vision Transformer (ViT) for image classification.
+
+Defines, from the ground up, every 'nn.Module' needed to go from a raw image to class
+logits: GELU activation, patch embeddings, cls/position embeddings, self-attention
+heads, multi-head attention, the position-wise MLP, a full transformer block, the
+stacked encoder, and the final 'ViTForClassfication' model.
+"""
+
 # Initial imports
 from typing import Optional, Tuple, List
 
@@ -7,16 +16,24 @@ import torch
 from torch import nn
 from torch import Tensor
 
+# Customized imports
+from llmsplay.transformers.vision.config import VisionTransformConfig
+
 # Check if CUDA is available and set the device accordingly
 DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
 
 
-# Customized imports
-from llmsplay.transformers.vision.config import VisionTransformConfig
-
-
 class GELU(nn.Module):
-    def forward(self, input):
+    """
+    Gaussian Error Linear Unit activation, using the tanh-based approximation. Smoothly
+    scales each input based on its own value instead of hard-cutting at zero like ReLU,
+    which tends to work better in transformer models.
+    """
+
+    def forward(self, input: Tensor) -> Tensor:
+        # Approximates the GELU function: 0.5 * x * (1 + tanh[sqrt(2/pi) *
+        # (x + 0.044715 * x^3)]), which behaves like an identity for large positive
+        # inputs and squashes large negative inputs toward zero
         return (
             0.5
             * input
@@ -264,94 +281,213 @@ class MultiHeadAttention(nn.Module):
 
 class MLP(nn.Module):
     """
-    A multi-layer perceptron module.
+    A multi-layer perceptron module. Expands each token embedding to a wider intermediate
+    size, applies a non-linearity, then projects it back down to 'hidden_size'. This is
+    applied position-wise, i.e. independently to each token.
     """
 
-    def __init__(self, config):
+    def __init__(self, config: VisionTransformConfig) -> None:
+        """
+        Parameters
+        ----------
+        config : object
+            Must expose 'hidden_size' and 'intermediate_size' attributes.
+        """
+
         super().__init__()
+
+        # Expands each token from 'hidden_size' to the wider 'intermediate_size'
         self.dense_1 = nn.Linear(config.hidden_size, config.intermediate_size)
+
+        # Non-linearity applied between the two linear layers
         self.activation = GELU()
+
+        # Projects back down from 'intermediate_size' to 'hidden_size'
         self.dense_2 = nn.Linear(config.intermediate_size, config.hidden_size)
 
-    def forward(self, x):
-        x = self.dense_1(x)
-        x = self.activation(x)
-        x = self.dense_2(x)
+    def forward(self, x: Tensor) -> Tensor:
+
+        # (batch, seq_len, intermediate_size)
+        x: Tensor = self.dense_1(x)
+
+        # Apply the non-linear activation elementwise
+        x: Tensor = self.activation(x)
+
+        # (batch, seq_len, hidden_size)
+        x: Tensor = self.dense_2(x)
+
         return x
 
 
 class Block(nn.Module):
-    def __init__(self, config):
+    """
+    A single transformer encoder block: applies multi-head self-attention and an MLP,
+    each preceded by layer normalization and wrapped in a residual connection. This is
+    the pre-norm transformer layer, stacked repeatedly to build the full encoder.
+    """
+
+    def __init__(self, config: VisionTransformConfig) -> None:
+        """
+        Parameters
+        ----------
+        config : object
+            Must expose the attributes required by 'MultiHeadAttention' and 'MLP', plus
+            'hidden_size' for the layer norms.
+        """
+
         super().__init__()
+
+        # Multi-head self-attention sub-layer
         self.attention = MultiHeadAttention(config)
+
+        # Normalizes the input before it is fed into attention
         self.layernorm_1 = nn.LayerNorm(config.hidden_size)
+
+        # Position-wise feed-forward sub-layer
         self.mlp = MLP(config)
+
+        # Normalizes the attention output before it is fed into the MLP
         self.layernorm_2 = nn.LayerNorm(config.hidden_size)
 
-    def forward(self, x, output_attentions=False):
+    def forward(
+        self, x: Tensor, output_attentions: bool = False
+    ) -> Tuple[Tensor, Optional[Tensor]]:
+
+        # Self-attention over the normalized input
         attention_output, attention_probs = self.attention(
             self.layernorm_1(x), output_attentions=output_attentions
         )
+
+        # Residual connection: add attention output back to the original input
         x = x + attention_output
+
+        # Feed-forward transform over the normalized result
         mlp_output = self.mlp(self.layernorm_2(x))
+
+        # Residual connection: add MLP output back to its input
         x = x + mlp_output
+
         if not output_attentions:
             return (x, None)
         else:
             return (x, attention_probs)
 
 
+# Listing 3.5 Creating an encoder block
 class Encoder(nn.Module):
-    def __init__(self, config):
+    """
+    The full transformer encoder: stacks 'num_hidden_layers' 'Block' instances one after
+    another, feeding each block's output as the next block's input.
+    """
+
+    def __init__(self, config: VisionTransformConfig) -> None:
+        """
+        Parameters
+        ----------
+        config : object
+            Must expose 'num_hidden_layers' plus the attributes required by 'Block'.
+        """
+
         super().__init__()
+
+        # One 'Block' per hidden layer, run sequentially
         self.blocks = nn.ModuleList([])
         for _ in range(config.num_hidden_layers):
             block = Block(config)
             self.blocks.append(block)
 
-    def forward(self, x, output_attentions=False):
-        all_attentions = []
+    def forward(
+        self, x: Tensor, output_attentions: bool = False
+    ) -> Tuple[Tensor, Optional[List[Tensor]]]:
+
+        # Collects each block's attention probabilities, when requested
+        all_attentions: List[Tensor] = []
+
+        # Pass the sequence through every block in order
         for block in self.blocks:
             x, attention_probs = block(x, output_attentions=output_attentions)
             if output_attentions:
                 all_attentions.append(attention_probs)
+
         if not output_attentions:
             return (x, None)
         else:
             return (x, all_attentions)
 
 
+# Listing 3.7 Building a classifier based on the ViT
 class ViTForClassfication(nn.Module):
-    def __init__(self, config):
+    """
+    A Vision Transformer for image classification: embeds an image into a sequence of
+    patch tokens, runs it through the transformer 'Encoder', then classifies the image
+    using the final hidden state of the cls token.
+    """
+
+    def __init__(self, config: VisionTransformConfig) -> None:
+        """
+        Parameters
+        ----------
+        config : object
+            Must expose 'image_size', 'hidden_size', 'num_classes', plus every attribute
+            required by 'Embeddings' and 'Encoder'.
+        """
+
         super().__init__()
         self.config = config
         self.image_size = config.image_size
         self.hidden_size = config.hidden_size
         self.num_classes = config.num_classes
+
+        # Turns the input image into a sequence of patch + cls + position embeddings
         self.embedding = Embeddings(config)
+
+        # Stack of transformer blocks that contextualizes the embeddings
         self.encoder = Encoder(config)
+
+        # Maps the cls token's final hidden state to per-class scores
         self.classifier = nn.Linear(self.hidden_size, self.num_classes)
+
+        # Apply custom weight initialization to every sub-module
         self.apply(self._init_weights)
 
-    def forward(self, x, output_attentions=False):
-        embedding_output = self.embedding(x)
+    def forward(
+        self, x: Tensor, output_attentions: bool = False
+    ) -> Tuple[Tensor, Optional[List[Tensor]]]:
+
+        # (batch, num_patches + 1, hidden_size)
+        embedding_output: Tensor = self.embedding(x)
+
+        # Contextualize every token through the transformer blocks
         encoder_output, all_attentions = self.encoder(
             embedding_output, output_attentions=output_attentions
         )
-        logits = self.classifier(encoder_output[:, 0, :])
+
+        # Use only the cls token's (first position) final hidden state for classification
+        logits: Tensor = self.classifier(encoder_output[:, 0, :])
+
         if not output_attentions:
             return (logits, None)
         else:
             return (logits, all_attentions)
 
-    def _init_weights(self, module):
+    def _init_weights(self, module: nn.Module) -> None:
+        """
+        Initialize the weights of the given module according to its type.
+        """
+
+        # Linear and conv layers: small random weights, zeroed bias
         if isinstance(module, (nn.Linear, nn.Conv2d)):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
             if module.bias is not None:
                 torch.nn.init.zeros_(module.bias)
+
+        # Layer norms: start as the identity transform (scale=1, shift=0)
         elif isinstance(module, nn.LayerNorm):
             module.bias.data.zero_()
             module.weight.data.fill_(1.0)
+
+        # Embeddings module: initialize its learnable position/cls parameters with a
+        # truncated normal distribution, computed in float32 for numerical stability
         elif isinstance(module, Embeddings):
             module.position_embeddings.data = nn.init.trunc_normal_(
                 module.position_embeddings.data.to(torch.float32),
