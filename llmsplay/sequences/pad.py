@@ -3,11 +3,8 @@ from typing import List
 
 import numpy as np
 
-# Define a constant for padding
-PAD: int = 0
-
-# Define a constant for unknown tokens
-UNK: int = 1
+# Customized imports
+from llmsplay.sequences import PAD
 
 
 def seq_padding(X: List[List[int]], padding: int = PAD) -> np.ndarray:
