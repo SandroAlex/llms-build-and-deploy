@@ -1,10 +1,10 @@
 # Makefile for managing the llmsplay Docker development environment
 .PHONY: help
-.PHONY: build build-fresh up down lock requirements-dev
+.PHONY: build build-fresh up down lock requirements
 .PHONY: compose config debug-worker jupyter logs
 .PHONY: ollama-pull ollama-shell
 
-# Load environment variables from .env (copy from .env.dev.cpu.example first)
+# Load environment variables from .env (copy from .env.cpu.example first)
 -include .env
 export
 
@@ -21,13 +21,13 @@ NC=\033[0;0m
 # Derive compose file and uv extras from USE_GPU (set in .env or passed on the command line)
 USE_GPU ?= false
 ifeq ($(USE_GPU),true)
-  COMPOSE_FILE = docker-compose.dev.gpu.yaml
+  COMPOSE_FILE = docker-compose.gpu.yaml
   UV_EXTRA     = gpu
-  REQ_FILE     = requirements.dev.gpu.txt
+  REQ_FILE     = requirements.gpu.txt
 else
-  COMPOSE_FILE = docker-compose.dev.cpu.yaml
+  COMPOSE_FILE = docker-compose.cpu.yaml
   UV_EXTRA     = cpu
-  REQ_FILE     = requirements.dev.cpu.txt
+  REQ_FILE     = requirements.cpu.txt
 endif
 
 # Shorthand — avoids repeating --file / --project-name on every command
@@ -47,7 +47,7 @@ help:
 	@printf "${YELLOW}make up${NC}               ${RED}- Start all services in the background${NC}\n"
 	@printf "${YELLOW}make down${NC}             ${RED}- Stop all services without removing volumes${NC}\n"
 	@printf "${YELLOW}make lock${NC}             ${RED}- Generate uv.lock for reproducible builds${NC}\n"
-	@printf "${YELLOW}make requirements-dev${NC} ${RED}- Export pinned requirements (cpu or gpu, driven by USE_GPU)${NC}\n"
+	@printf "${YELLOW}make requirements${NC}     ${RED}- Export pinned requirements (cpu or gpu, driven by USE_GPU)${NC}\n"
 	@printf "${YELLOW}make ollama-pull${NC}      ${RED}- Pull an Ollama model (default: llama3.2 — override with MODEL=<name>)${NC}\n"
 	@printf "${YELLOW}make ollama-shell${NC}     ${RED}- Open an interactive shell inside the Ollama container${NC}\n"
 	@printf "${YELLOW}make compose${NC}          ${RED}- Show which compose file is being used${NC}\n"
@@ -108,7 +108,7 @@ lock:
 # Requirements export
 # -----------------------------------------------------------------------------
 
-requirements-dev:
+requirements:
 	@printf "\n"
 	@printf "${GREEN}Exporting $(UV_EXTRA) requirements ...${NC}\n"
 	@$(DC) run --rm --no-deps $(WORKER_SERVICE) uv export --no-hashes --extra $(UV_EXTRA) --output-file $(REQ_FILE) 

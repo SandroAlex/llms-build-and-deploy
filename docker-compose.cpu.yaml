@@ -11,7 +11,7 @@ services:
   worker-service:
     build:
       context: .
-      dockerfile: Dockerfile.dev.cpu
+      dockerfile: Dockerfile.cpu
     image: llmsplay-dev-cpu
     hostname: worker-host
     ports:
