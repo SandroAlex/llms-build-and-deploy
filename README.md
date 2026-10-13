@@ -41,7 +41,7 @@ The Makefile picks `docker-compose.cpu.yaml` or `docker-compose.gpu.yaml` from `
 make build
 ```
 
-This builds a single development image (`llmsplay-dev-cpu` or `llmsplay-dev-gpu`, depending on `USE_GPU`) with Python 3.11, PyTorch, JupyterLab, and MLflow. Docker layer caching makes subsequent builds fast — only changed layers are rebuilt.
+This builds a single development image (`llmsplay-dev-cpu` or `llmsplay-dev-gpu`, depending on `USE_GPU`) with Python 3.11, PyTorch, JupyterLab, and the MLflow client. The MLflow server runs from the official `ghcr.io/mlflow/mlflow` image, so it needs no build. Docker layer caching makes subsequent builds fast — only changed layers are rebuilt.
 
 For a full rebuild from scratch (e.g. to pick up a new base image):
 
@@ -60,7 +60,7 @@ This starts three containers in the background:
 | Service | What it does | Default port |
 |---|---|---|
 | `worker-service` | Development container; runs notebooks and experiments | — |
-| `mlflow-service` | MLflow tracking UI, backed by SQLite | `5000` |
+| `mlflow-service` | MLflow tracking UI (official `ghcr.io/mlflow/mlflow` image), backed by SQLite | `5000` |
 | `ollama-service` | Ollama local model server | `11434` |
 
 ### 4. Open JupyterLab
@@ -124,7 +124,12 @@ make help
 
 ## MLflow
 
-The MLflow tracking UI runs at [http://localhost:5000](http://localhost:5000). Experiment data is persisted to `mlflow/database.db` (SQLite) inside the project directory and survives container restarts.
+The MLflow tracking UI runs at [http://localhost:5000](http://localhost:5000). The server uses the official `ghcr.io/mlflow/mlflow` image and mounts the project's `mlflow/` directory at `/mlflow`:
+
+- `mlflow/database.db`: SQLite backend store with runs, parameters, metrics and traces
+- `mlflow/artifacts/`: artifact store for models, plots and files logged by ML and generative AI experiments
+
+Code in the worker container logs to `http://mlflow-service:5000` (`MLFLOW_TRACKING_URI`), and artifacts are uploaded through the server (`--serve-artifacts`). All of this is set in `.env` (`MLFLOW_IMAGE`, `MLFLOW_BACKEND_STORE_URI`, `MLFLOW_ARTIFACTS_DESTINATION`, `MLFLOW_ALLOWED_HOSTS`, `MLFLOW_TRACKING_URI`). Both survive container restarts and are git-ignored.
 
 ## Project layout
 
@@ -132,14 +137,14 @@ The MLflow tracking UI runs at [http://localhost:5000](http://localhost:5000). E
 .
 ├── docker-compose.cpu.yaml   # CPU compose configuration
 ├── docker-compose.gpu.yaml   # GPU compose configuration (all NVIDIA GPUs on worker)
-├── Dockerfile.cpu            # CPU worker + MLflow image
-├── Dockerfile.gpu            # CUDA worker + MLflow image
+├── Dockerfile.cpu            # CPU worker image
+├── Dockerfile.gpu            # CUDA worker image
 ├── pyproject.toml            # Python dependencies (managed by uv)
 ├── uv.lock                   # Locked dependency versions
 ├── .env.cpu.example          # Env template (USE_GPU=false)
 ├── .env.gpu.example          # Env template (USE_GPU=true)
 ├── Makefile                  # All developer commands
-├── mlflow/                   # MLflow SQLite database (git-ignored)
+├── mlflow/                   # MLflow database.db and artifacts/ (git-ignored)
 └── llmsplay/                 # Notebooks and experiment code
 ```
 
