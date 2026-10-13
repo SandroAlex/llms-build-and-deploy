@@ -52,6 +52,16 @@ A question-answering agent built directly on `langgraph.StateGraph`, rather than
 - **MLflow tracing** — logs under the `"QA Workflow Graph"` experiment.
 - Runs as a script (`if __name__ == "__main__":`) with two example invocations: one off-topic question and one on-topic question, to show both branches of `context_provider_node`.
 
+### `linkedin.py`
+
+A generator-reflector agent that iteratively drafts and critiques a LinkedIn post, built on `langgraph.MessageGraph` — a message-list-only variant of `StateGraph`:
+
+- **Generate node** — `generation_node` asks the model to draft (or refine) a LinkedIn post via `generate_chain`, appending the result as an `AIMessage`.
+- **Reflect node** — `reflection_node` asks the model to critique the latest post via `reflect_chain`, feeding the critique back in as a `HumanMessage` so the next `generate` call treats it as feedback.
+- **Loop control** — `should_continue` routes `generate → reflect` repeatedly, stopping and routing to `END` once the message list grows past 6 entries.
+- **MLflow tracing** — logs under the `"Linkedin Post Reflection Agent"` experiment.
+- Runs as a script, printing the final (most revised) post for a hardcoded `QUERY`.
+
 ## Running the examples
 
 - Set `OPENAI_API_KEY` in your environment (or `.env`, if using the project's docker-compose setup).
