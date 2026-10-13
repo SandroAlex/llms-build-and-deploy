@@ -1,6 +1,6 @@
 """
 Script to demonstrate how to use MLflow to track interactions with a local Ollama model using the OpenAI API. 
-This script sets up MLflow to use a SQLite database for tracking, enables auto-tracing for OpenAI interactions, 
+This script sets up MLflow to log to the project's tracking server, enables auto-tracing for OpenAI interactions, 
 and makes a chat completion request to the local Ollama model. The interactions will be automatically logged in 
 MLflow, allowing for easy observability and analysis of the model's performance.
 
@@ -8,12 +8,14 @@ Source: https://medium.com/@hitorunajp/bringing-observability-to-local-llms-firs
 """
 
 # Initial imports
+import os
+
 from openai import OpenAI
 
 import mlflow
 
-# Define the tracking URI for MLflow to use SQLite as the backend store
-TRACKING_URI: str = "sqlite:////llm_app/mlflow/database.db"
+# MLflow tracking server (stores runs in mlflow/database.db, artifacts in mlflow/artifacts/)
+TRACKING_URI: str = os.environ.get("MLFLOW_TRACKING_URI", "http://mlflow-service:5000")
 
 # Experiment name for MLflow
 EXPERIMENT_NAME: str = "Tracking Ollama with MLflow"

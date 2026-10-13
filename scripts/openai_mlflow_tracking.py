@@ -14,7 +14,7 @@ import mlflow
 from openai import OpenAI
 
 # Define the tracking URI for MLflow to use SQLite as the backend store
-TRACKING_URI: str = os.environ.get("MLFLOW_TRACKING_URI", "sqlite:////llm_app/mlflow/database.db")
+TRACKING_URI: str = os.environ.get("MLFLOW_TRACKING_URI", "http://mlflow-service:5000")
 
 # Experiment name for MLflow
 EXPERIMENT_NAME: str = "Tracking OpenAI with MLflow"

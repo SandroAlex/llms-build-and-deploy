@@ -95,8 +95,10 @@ venv.bak/
 # UV cache directory
 .uv/
 
-# MLflow runtime database
+# MLflow runtime database and experiment artifacts
 mlflow/*.db
+mlflow/artifacts/*
+!mlflow/artifacts/.gitkeep
 
 # Tabular data files.
 *.csv

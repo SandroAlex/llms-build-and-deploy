@@ -32,9 +32,7 @@ QUERY: str = (
 )
 
 # Mlflow parameters
-TRACKING_URI = os.environ.get(
-    "MLFLOW_TRACKING_URI", "sqlite:////llm_app/mlflow/database.db"
-)
+TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", "http://mlflow-service:5000")
 EXPERIMENT_NAME = "Math Agent Test"
 #########################################################################################
 
