@@ -31,6 +31,9 @@ services:
       # so runtime overrides remain explicit in compose).
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # No proxy for the MLflow server and worker container
+      - NO_PROXY=${NO_PROXY}
+      - no_proxy=${NO_PROXY}      
     volumes:
       - .:/llm_app
     depends_on:
@@ -54,14 +57,7 @@ services:
       - ${MLFLOW_PORT}:5000
     volumes:
       - ./mlflow:/mlflow
-    command: >
-      mlflow server
-      --host 0.0.0.0
-      --port 5000
-      --backend-store-uri ${MLFLOW_BACKEND_STORE_URI}
-      --serve-artifacts
-      --artifacts-destination ${MLFLOW_ARTIFACTS_DESTINATION}
-      --allowed-hosts ${MLFLOW_ALLOWED_HOSTS}
+    command: mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri ${MLFLOW_BACKEND_STORE_URI} --serve-artifacts --artifacts-destination ${MLFLOW_ARTIFACTS_DESTINATION} --allowed-hosts ${MLFLOW_ALLOWED_HOSTS}
     restart: unless-stopped
 
   # Ollama local model server: serves open-weight LLMs via a REST API on
