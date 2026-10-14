@@ -55,6 +55,7 @@ help:
 	@printf "${YELLOW}make debug-worker${NC}     ${RED}- Open a bash shell inside the worker container${NC}\n"
 	@printf "${YELLOW}make jupyter${NC}          ${RED}- Start JupyterLab inside the worker container${NC}\n"
 	@printf "${YELLOW}make logs${NC}             ${RED}- Follow logs for all services${NC}\n"
+	@printf "${YELLOW}make mlflow-gc${NC}        ${RED}- Run MLFlow garbage collection (removes permanently all experiments that were previously deleted using the MLFlow UI)${NC}\n"
 	@printf "\n"
 
 # -----------------------------------------------------------------------------
@@ -169,4 +170,15 @@ logs:
 	@printf "${GREEN}Following logs for all services ...${NC}\n"
 	@$(DC) logs --follow --timestamps
 	@printf "${BLUE}Exited log view.${NC}\n"
+	@printf "\n"
+
+# -----------------------------------------------------------------------------
+# MLFlow
+# -----------------------------------------------------------------------------
+
+mlflow-gc: # Removes permanently all experiments that were previously deleted using the MLFlow UI
+	@printf "\n"
+	@printf "${GREEN}Running MLFlow garbage collection ...${NC}\n"
+	@$(DC) exec mlflow-service mlflow gc --backend-store-uri $(MLFLOW_BACKEND_STORE_URI) --tracking-uri $(MLFLOW_TRACKING_URI)
+	@printf "${BLUE}MLFlow garbage collection completed!${NC}\n"
 	@printf "\n"
