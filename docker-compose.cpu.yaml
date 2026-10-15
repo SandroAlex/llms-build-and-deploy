@@ -17,6 +17,7 @@ services:
     ports:
       - ${JUPYTER_EXTERNAL_PORT}:8888
     environment:
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       # Log to the MLflow server over HTTP so artifacts are proxied into
       # mlflow/artifacts/ instead of being written to a local ./mlruns folder.
@@ -27,9 +28,6 @@ services:
       # Netscape-format cookies.txt (exported from a logged-in YouTube session)
       # used by yt-dlp in lab4_video.py to reduce bot-detection blocks
       - YT_DLP_COOKIES_FILE=${YT_DLP_COOKIES_FILE}
-      # No proxy for the MLflow server and worker container
-      - NO_PROXY=${NO_PROXY}
-      - no_proxy=${NO_PROXY}
     volumes:
       - .:/llm_app
     depends_on:
