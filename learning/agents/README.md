@@ -62,8 +62,20 @@ A generator-reflector agent that iteratively drafts and critiques a LinkedIn pos
 - **MLflow tracing** — logs under the `"Linkedin Post Reflection Agent"` experiment.
 - Runs as a script, printing the final (most revised) post for a hardcoded `QUERY`.
 
+### `nutrition.py`
+
+A self-critiquing research agent (the "Reflexion" pattern) that argues an evolutionary, animal-based nutrition stance and backs it up with live web research, built on `langgraph.MessageGraph`:
+
+- **Structured output via Pydantic tools** — `AnswerQuestion` (answer + `Reflection` self-critique + follow-up `search_queries`) and `ReviseAnswer` (adds a `references` list) are bound to the LLM as tools, forcing it to return its reasoning in a fixed JSON shape instead of free text.
+- **Nodes** — `respond` drafts the initial answer (`AnswerQuestion`), `execute_tools` runs each requested query through the `TavilySearchResults` web search tool and returns the results as `ToolMessage`s, and `revisor` rewrites the answer with citations (`ReviseAnswer`) using those results.
+- **Loop control** — `event_loop` counts how many `execute_tools` round-trips have happened and keeps looping `revisor → execute_tools` until `MAX_ITERATIONS` is reached, then routes to `END`.
+- **MLflow tracing** — logs under the `"Nutrition Agent"` experiment.
+- **Extra dependency** — needs a Tavily API key (`langchain_community.tools.tavily_search.TavilySearchResults`) in addition to `OPENAI_API_KEY`.
+- Two debug flags (`TEST_TAVILY`, `TEST_SIMPLE_LLM`) let you sanity-check the search tool or a bare LLM call before running the full graph.
+
 ## Running the examples
 
 - Set `OPENAI_API_KEY` in your environment (or `.env`, if using the project's docker-compose setup).
 - An MLflow tracking server must be reachable at the configured `MLFLOW_TRACKING_URI` for the autologging calls to succeed. Traces can be viewed in the MLflow UI at [http://localhost:5000](http://localhost:5000).
 - `youtuber.py` additionally needs the YouTube-related packages listed above and, if you hit bot-detection blocks, a cookies file as described.
+- `nutrition.py` additionally needs a `TAVILY_API_KEY` for its web search tool.
