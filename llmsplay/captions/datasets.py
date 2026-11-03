@@ -12,13 +12,16 @@ The target sequence is the input shifted one position left, so the model
 learns to predict the next token (teacher forcing).
 """
 
-import json, torch
+# Initial imports
+import torch
 from typing import Dict, List, Tuple
 
 from torch.utils.data import Dataset
 from torchvision import transforms
 from PIL import Image
 
+# Customized llmsplay imports
+from llmsplay.captions.images import center_crop
 
 class FlickrD(Dataset):
     """
@@ -48,24 +51,29 @@ class FlickrD(Dataset):
         self.images: List[str] = images
         self.captions: List[List[List[str]]] = captions
         self.word2idx: Dict[str, int] = word2idx
+        
         # Fixed sequence length after padding
         self._max_len: int = 50
+        
         # Images are resized to image_size x image_size
         self.image_size: int = 128
+        
         self._image_transform: transforms.Compose = self._construct_image_transform(
             self.image_size
         )
+        
         # Flat list of (image_path, caption_tokens) pairs
         self._data: List[Tuple[str, List[str]]] = self._create_input_label_mappings()
         self._dataset_size: int = len(self._data)
+        
         # Special token ids and strings (ids must match word2idx)
+        self._pad_idx: int = 0
         self._start_idx: int = 1
         self._end_idx: int = 2
-        self._pad_idx: int = 0
         self._UNK_idx: int = 3
+        self._PAD_token: str = "<pad>"
         self._START_token: str = "<start>"
         self._END_token: str = "<end>"
-        self._PAD_token: str = "<pad>"
         self._UNK_token: str = "<unk>"
 
     def _construct_image_transform(self, image_size: int) -> transforms.Compose:
@@ -84,7 +92,8 @@ class FlickrD(Dataset):
         """
         # ImageNet normalization statistics
         normalize: transforms.Normalize = transforms.Normalize(
-            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+            mean=[0.485, 0.456, 0.406], 
+            std=[0.229, 0.224, 0.225]
         )
         preprocessing: transforms.Compose = transforms.Compose(
             [
@@ -144,6 +153,7 @@ class FlickrD(Dataset):
             '(image_path, caption_tokens)' pairs; an image with 5 captions
             yields 5 pairs.
         """
+        
         processed_data: List[Tuple[str, List[str]]] = []
         img: str
         caps: List[List[str]]
@@ -152,6 +162,7 @@ class FlickrD(Dataset):
             for cap in caps:
                 pair: Tuple[str, List[str]] = (img, cap)
                 processed_data.append(pair)
+        
         return processed_data
 
     def _load_and_prepare_image(self, image_name: str) -> torch.Tensor:
@@ -207,16 +218,20 @@ class FlickrD(Dataset):
         attn_mask : torch.Tensor
             Bool mask of shape '[max_len]'; True for real tokens, False for padding.
         """
+        
         # Extract the caption data
         image_id: str
         tokens: List[str]
         image_id, tokens = self._data[index]
+        
         # Load and preprocess image
         image_tensor: torch.Tensor = self._load_and_prepare_image(image_id)
+        
         # Truncate, normalize and wrap the caption with special tokens
         tokens = tokens[: self._max_len]
         tokens = [token.strip().lower() for token in tokens]
         tokens = [self._START_token] + tokens + [self._END_token]
+        
         # Shift by one: input predicts the next token in target
         input_words: List[str] = tokens[:-1].copy()
         tgt_words: List[str] = tokens[1:].copy()
@@ -252,22 +267,3 @@ class FlickrD(Dataset):
         attn_mask = attn_mask.bool()
 
         return image_tensor, input_tokens, tgt_tokens, attn_mask
-
-
-def center_crop(img: Image.Image) -> Image.Image:
-    """
-    Crop the largest centered square from 'img'.
-    """
-    
-    width: int
-    height: int
-    width, height = img.size
-    new: int = min(width, height)
-    left: float = (width - new) / 2
-    top: float = (height - new) / 2
-    right: float = (width + new) / 2
-    bottom: float = (height + new) / 2
-    im: Image.Image = img.crop((left, top, right, bottom))
-    
-    # Return the cropped image
-    return im
