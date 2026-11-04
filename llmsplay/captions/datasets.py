@@ -17,11 +17,14 @@ import torch
 from typing import Dict, List, Tuple
 
 from torch.utils.data import Dataset
+from torch import Tensor
 from torchvision import transforms
-from PIL import Image
+from PIL import Image as pil_image_module
+from PIL.Image import Image
 
 # Customized llmsplay imports
 from llmsplay.captions.images import center_crop
+
 
 class FlickrD(Dataset):
     """
@@ -47,25 +50,25 @@ class FlickrD(Dataset):
             Vocabulary mapping a token to its integer id. Must contain
             '<pad>' (0), '<start>' (1), '<end>' (2) and '<unk>' (3).
         """
-        
+
         self.images: List[str] = images
         self.captions: List[List[List[str]]] = captions
         self.word2idx: Dict[str, int] = word2idx
-        
+
         # Fixed sequence length after padding
         self._max_len: int = 50
-        
+
         # Images are resized to image_size x image_size
         self.image_size: int = 128
-        
+
         self._image_transform: transforms.Compose = self._construct_image_transform(
             self.image_size
         )
-        
+
         # Flat list of (image_path, caption_tokens) pairs
         self._data: List[Tuple[str, List[str]]] = self._create_input_label_mappings()
         self._dataset_size: int = len(self._data)
-        
+
         # Special token ids and strings (ids must match word2idx)
         self._pad_idx: int = 0
         self._start_idx: int = 1
@@ -92,8 +95,7 @@ class FlickrD(Dataset):
         """
         # ImageNet normalization statistics
         normalize: transforms.Normalize = transforms.Normalize(
-            mean=[0.485, 0.456, 0.406], 
-            std=[0.229, 0.224, 0.225]
+            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
         )
         preprocessing: transforms.Compose = transforms.Compose(
             [
@@ -103,7 +105,7 @@ class FlickrD(Dataset):
         )
         return preprocessing
 
-    def _load_and_process_images(self) -> Dict[str, torch.Tensor]:
+    def _load_and_process_images(self) -> Dict[str, Tensor]:
         """
         Eagerly load and preprocess every image.
 
@@ -111,19 +113,19 @@ class FlickrD(Dataset):
 
         Returns
         -------
-        dict of str to torch.Tensor
+        dict of str to Tensor
             Mapping from image path to its preprocessed tensor '[3, H, W]'.
         """
         # Load images
-        images_raw: List[Image.Image] = [
-            center_crop(Image.open(path)).resize((self.image_size, self.image_size))
+        images_raw: List[Image] = [
+            center_crop(pil_image_module.open(path)).resize(
+                (self.image_size, self.image_size)
+            )
             for path in self.images
         ]
         # Adapt the images to CNN trained on ImageNet { PIL -> Tensor }
-        image_tensors: List[torch.Tensor] = [
-            self._image_transform(img) for img in images_raw
-        ]
-        images_processed: Dict[str, torch.Tensor] = {
+        image_tensors: List[Tensor] = [self._image_transform(img) for img in images_raw]
+        images_processed: Dict[str, Tensor] = {
             img_name: img_tensor
             for img_name, img_tensor in zip(self.images, image_tensors)
         }
@@ -153,7 +155,7 @@ class FlickrD(Dataset):
             '(image_path, caption_tokens)' pairs; an image with 5 captions
             yields 5 pairs.
         """
-        
+
         processed_data: List[Tuple[str, List[str]]] = []
         img: str
         caps: List[List[str]]
@@ -162,10 +164,10 @@ class FlickrD(Dataset):
             for cap in caps:
                 pair: Tuple[str, List[str]] = (img, cap)
                 processed_data.append(pair)
-        
+
         return processed_data
 
-    def _load_and_prepare_image(self, image_name: str) -> torch.Tensor:
+    def _load_and_prepare_image(self, image_name: str) -> Tensor:
         """
         Load one image, center-crop it to a square, resize and normalize it.
 
@@ -176,13 +178,13 @@ class FlickrD(Dataset):
 
         Returns
         -------
-        torch.Tensor
+        Tensor
             Normalized image of shape '[3, image_size, image_size]'.
         """
-        img_pil: Image.Image = center_crop(Image.open(image_name)).resize(
+        img_pil: Image = center_crop(pil_image_module.open(image_name)).resize(
             (self.image_size, self.image_size)
         )
-        image_tensor: torch.Tensor = self._image_transform(img_pil)
+        image_tensor: Tensor = self._image_transform(img_pil)
         return image_tensor
 
     def __len__(self) -> int:
@@ -196,9 +198,7 @@ class FlickrD(Dataset):
         """
         return self._dataset_size
 
-    def __getitem__(
-        self, index: int
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    def __getitem__(self, index: int) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
         """
         Build one training sample.
 
@@ -209,29 +209,29 @@ class FlickrD(Dataset):
 
         Returns
         -------
-        image_tensor : torch.Tensor
+        image_tensor : Tensor
             Normalized image of shape '[3, image_size, image_size]'.
-        input_tokens : torch.Tensor
+        input_tokens : Tensor
             Token ids '<start> w1 ... wn' + padding, shape '[max_len]'.
-        tgt_tokens : torch.Tensor
+        tgt_tokens : Tensor
             Token ids 'w1 ... wn <end>' + padding, shape '[max_len]'.
-        attn_mask : torch.Tensor
+        attn_mask : Tensor
             Bool mask of shape '[max_len]'; True for real tokens, False for padding.
         """
-        
+
         # Extract the caption data
         image_id: str
         tokens: List[str]
         image_id, tokens = self._data[index]
-        
+
         # Load and preprocess image
-        image_tensor: torch.Tensor = self._load_and_prepare_image(image_id)
-        
+        image_tensor: Tensor = self._load_and_prepare_image(image_id)
+
         # Truncate, normalize and wrap the caption with special tokens
         tokens = tokens[: self._max_len]
         tokens = [token.strip().lower() for token in tokens]
         tokens = [self._START_token] + tokens + [self._END_token]
-        
+
         # Shift by one: input predicts the next token in target
         input_words: List[str] = tokens[:-1].copy()
         tgt_words: List[str] = tokens[1:].copy()
@@ -254,11 +254,11 @@ class FlickrD(Dataset):
             self.word2idx.get(token, self._UNK_idx) for token in tgt_words
         ]
 
-        input_tokens: torch.Tensor = torch.Tensor(input_ids).long()
-        tgt_tokens: torch.Tensor = torch.Tensor(tgt_ids).long()
+        input_tokens: Tensor = torch.Tensor(input_ids).long()
+        tgt_tokens: Tensor = torch.Tensor(tgt_ids).long()
 
         # Padding mask: True on real tokens, False on padding
-        attn_mask: torch.Tensor = torch.zeros(
+        attn_mask: Tensor = torch.zeros(
             [
                 self._max_len,
             ]
