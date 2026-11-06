@@ -36,7 +36,7 @@ class SinusoidalPosEmb(nn.Module):
         """
 
         super().__init__()
-        self.dim = dim
+        self.dim: int = dim
 
     def forward(self, x: Tensor) -> Tensor:
         """
@@ -52,14 +52,16 @@ class SinusoidalPosEmb(nn.Module):
         """
 
         # x: (batch,) -- run the frequency computation on the same device as the input
-        device = x.device
+        device: torch.device = x.device
 
         # Half the dimensions encode sine, the other half cosine
-        half_dim = self.dim // 2
+        half_dim: int = self.dim // 2
 
-        # Geometrically spaced frequencies, from 1 down to 1/10000 -- shape (half_dim,)
-        emb = math.log(10000) / (half_dim - 1)
-        emb = torch.exp(torch.arange(half_dim, device=device) * -emb)
+        # Geometrically spaced frequency scale, from 1 down to 1/10000
+        freq_scale: float = math.log(10000) / (half_dim - 1)
+
+        # Per-frequency decay factors -- shape (half_dim,)
+        emb: Tensor = torch.exp(torch.arange(half_dim, device=device) * -freq_scale)
 
         # Outer product: each position times every frequency
         # (batch, 1) * (1, half_dim) -> (batch, half_dim)
@@ -96,10 +98,10 @@ class AttentionBlock(nn.Module):
         """
 
         super(AttentionBlock, self).__init__()
-        self.masking = masking
+        self.masking: bool = masking
 
         # Multi-head attention mechanism
-        self.multihead_attn = nn.MultiheadAttention(
+        self.multihead_attn: nn.MultiheadAttention = nn.MultiheadAttention(
             hidden_size, num_heads=num_heads, batch_first=True, dropout=0.0
         )
 
@@ -127,7 +129,9 @@ class AttentionBlock(nn.Module):
 
         # x_in: (batch, seq_len_q, hidden_size) -- apply causal masking if enabled:
         # position i may only attend to positions <= i
+        mask: Optional[Tensor]
         if self.masking:
+            l: int
             _, l, _ = x_in.shape
 
             # (seq_len_q, seq_len_q) boolean mask, True above the diagonal (future
@@ -175,29 +179,29 @@ class TransformerBlock(nn.Module):
         """
 
         super(TransformerBlock, self).__init__()
-        self.decoder = decoder
+        self.decoder: bool = decoder
 
         # Layer normalization for the input
-        self.norm1 = nn.LayerNorm(hidden_size)
+        self.norm1: nn.LayerNorm = nn.LayerNorm(hidden_size)
 
         # Self-attention mechanism
-        self.attn1 = AttentionBlock(
+        self.attn1: AttentionBlock = AttentionBlock(
             hidden_size=hidden_size, num_heads=num_heads, masking=masking
         )
 
         # Layer normalization for the output of the first attention layer
         if self.decoder:
-            self.norm2 = nn.LayerNorm(hidden_size)
+            self.norm2: nn.LayerNorm = nn.LayerNorm(hidden_size)
             # Self-attention mechanism for the decoder with no masking
-            self.attn2 = AttentionBlock(
+            self.attn2: AttentionBlock = AttentionBlock(
                 hidden_size=hidden_size, num_heads=num_heads, masking=False
             )
 
         # Layer normalization for the output before the MLP
-        self.norm_mlp = nn.LayerNorm(hidden_size)
+        self.norm_mlp: nn.LayerNorm = nn.LayerNorm(hidden_size)
 
         # Multi-layer perceptron (MLP)
-        self.mlp = nn.Sequential(
+        self.mlp: nn.Sequential = nn.Sequential(
             nn.Linear(hidden_size, hidden_size * 4),
             nn.ELU(),
             nn.Linear(hidden_size * 4, hidden_size),
@@ -288,23 +292,25 @@ class VisionEncoder(nn.Module):
 
         super(VisionEncoder, self).__init__()
 
-        self.patch_size = patch_size
+        self.patch_size: int = patch_size
 
         # Projects a flattened patch (channels_in * patch_size^2 values) to hidden_size
-        self.fc_in = nn.Linear(channels_in * patch_size * patch_size, hidden_size)
+        self.fc_in: nn.Linear = nn.Linear(
+            channels_in * patch_size * patch_size, hidden_size
+        )
 
         # Number of patches per image: (image_size // patch_size) ** 2
-        seq_length = (image_size // patch_size) ** 2
+        seq_length: int = (image_size // patch_size) ** 2
 
         # Learnable position embedding, one per patch; shape (1, seq_length,
         # hidden_size) so it broadcasts over the batch dimension
-        self.pos_embedding = nn.Parameter(
+        self.pos_embedding: nn.Parameter = nn.Parameter(
             torch.empty(1, seq_length, hidden_size).normal_(std=0.02)
         )
 
         # Create multiple transformer blocks as layers (no masking: every patch can
         # attend to every other patch)
-        self.blocks = nn.ModuleList(
+        self.blocks: nn.ModuleList = nn.ModuleList(
             [
                 TransformerBlock(hidden_size, num_heads, decoder=False, masking=False)
                 for _ in range(num_layers)
@@ -327,15 +333,15 @@ class VisionEncoder(nn.Module):
 
         # (batch, channels_in, image_size, image_size)
         # -> (batch, seq_length, channels_in * patch_size * patch_size)
-        patch_seq = extract_patches(image, patch_size=self.patch_size)
+        patch_seq: Tensor = extract_patches(image, patch_size=self.patch_size)
 
         # (batch, seq_length, channels_in * patch_size * patch_size)
         # -> (batch, seq_length, hidden_size)
-        patch_emb = self.fc_in(patch_seq)
+        patch_emb: Tensor = self.fc_in(patch_seq)
 
         # Add a unique position embedding to each patch embedding (broadcast over
         # batch); shape stays (batch, seq_length, hidden_size)
-        embs = patch_emb + self.pos_embedding
+        embs: Tensor = patch_emb + self.pos_embedding
 
         # Pass the embeddings through each transformer block; shape is unchanged
         # throughout: (batch, seq_length, hidden_size)
@@ -343,3 +349,113 @@ class VisionEncoder(nn.Module):
             embs = block(embs)
 
         return embs
+
+
+# Listing 4.6 Creating a decoder to generate text
+class Decoder(nn.Module):
+    """
+    Autoregressive text decoder: embeds a token sequence, adds sinusoidal position
+    embeddings, then runs it through a stack of decoder 'TransformerBlock's that
+    self-attend causally over the sequence and cross-attend over 'encoder_output'
+    (e.g. a 'VisionEncoder's per-patch embeddings), finally projecting each position
+    to a distribution over the vocabulary.
+    """
+
+    def __init__(
+        self,
+        num_emb: int,
+        hidden_size: int = 128,
+        num_layers: int = 3,
+        num_heads: int = 4,
+    ) -> None:
+        """
+        Parameters
+        ----------
+        num_emb : int
+            Vocabulary size (number of distinct tokens).
+        hidden_size : int, default=128
+            Dimensionality of the token embeddings and transformer blocks.
+        num_layers : int, default=3
+            Number of stacked decoder 'TransformerBlock's.
+        num_heads : int, default=4
+            Number of attention heads per transformer block.
+        """
+
+        super(Decoder, self).__init__()
+
+        # Create an embedding layer for tokens: (vocab) -> (vocab, hidden_size) table
+        self.embedding: nn.Embedding = nn.Embedding(num_emb, hidden_size)
+
+        # Initialize the embedding weights small, so embeddings start close to zero
+        self.embedding.weight.data = 0.001 * self.embedding.weight.data
+
+        # Initialize sinusoidal positional embeddings, shared across all positions
+        self.pos_emb: SinusoidalPosEmb = SinusoidalPosEmb(hidden_size)
+
+        # Create multiple decoder transformer blocks as layers (causal self-attention
+        # plus cross-attention over the encoder output)
+        self.blocks: nn.ModuleList = nn.ModuleList(
+            [
+                TransformerBlock(hidden_size, num_heads, decoder=True)
+                for _ in range(num_layers)
+            ]
+        )
+
+        # Projects each position's hidden state to per-token vocabulary logits
+        self.fc_out: nn.Linear = nn.Linear(hidden_size, num_emb)
+
+    def forward(
+        self,
+        input_seq: Tensor,
+        encoder_output: Tensor,
+        input_padding_mask: Optional[Tensor] = None,
+        encoder_padding_mask: Optional[Tensor] = None,
+    ) -> Tensor:
+        """
+        Parameters
+        ----------
+        input_seq : Tensor
+            Token ids, shape (batch, seq_len).
+        encoder_output : Tensor
+            Sequence to cross-attend to (e.g. a 'VisionEncoder's output), shape
+            (batch, seq_len_enc, hidden_size).
+        input_padding_mask : Optional[Tensor], default=None
+            Padding mask for 'input_seq', shape (batch, seq_len).
+        encoder_padding_mask : Optional[Tensor], default=None
+            Padding mask for 'encoder_output', shape (batch, seq_len_enc).
+
+        Returns
+        -------
+        Tensor
+            Per-position vocabulary logits, shape (batch, seq_len, num_emb).
+        """
+
+        # (batch, seq_len) -> (batch, seq_len, hidden_size)
+        input_embs: Tensor = self.embedding(input_seq)
+        bs: int
+        l: int
+        h: int
+        bs, l, h = input_embs.shape
+
+        # Compute one positional embedding per sequence position (0, 1, ..., l-1),
+        # shape (l, hidden_size), then broadcast it to every sample in the batch
+        seq_indx: Tensor = torch.arange(l, device=input_seq.device)
+        pos_emb: Tensor = self.pos_emb(seq_indx).reshape(1, l, h).expand(bs, l, h)
+
+        # Add positional embeddings to the token embeddings; shape stays
+        # (batch, seq_len, hidden_size)
+        embs: Tensor = input_embs + pos_emb
+
+        # Pass the embeddings through each decoder block: causal self-attention over
+        # 'embs' plus cross-attention over 'encoder_output'; shape is unchanged
+        # throughout: (batch, seq_len, hidden_size)
+        for block in self.blocks:
+            embs = block(
+                embs,
+                input_key_mask=input_padding_mask,
+                cross_key_mask=encoder_padding_mask,
+                kv_cross=encoder_output,
+            )
+
+        # (batch, seq_len, hidden_size) -> (batch, seq_len, num_emb)
+        return self.fc_out(embs)

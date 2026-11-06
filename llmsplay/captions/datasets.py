@@ -93,9 +93,11 @@ class FlickrD(Dataset):
         transforms.Compose
             'ToTensor' followed by ImageNet 'Normalize'.
         """
+        
         # ImageNet normalization statistics
         normalize: transforms.Normalize = transforms.Normalize(
-            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+            mean=[0.485, 0.456, 0.406], 
+            std=[0.229, 0.224, 0.225]
         )
         preprocessing: transforms.Compose = transforms.Compose(
             [
@@ -140,9 +142,11 @@ class FlickrD(Dataset):
         dict of str to list of list of str
             Image path -> captions, each caption a list of tokens.
         """
+        
         grouped_captions: Dict[str, List[List[str]]] = {
             self.images[i]: self.captions[i] for i in range(len(self.images))
         }
+        
         return grouped_captions
 
     def _create_input_label_mappings(self) -> List[Tuple[str, List[str]]]:
@@ -181,10 +185,12 @@ class FlickrD(Dataset):
         Tensor
             Normalized image of shape '[3, image_size, image_size]'.
         """
+        
         img_pil: Image = center_crop(pil_image_module.open(image_name)).resize(
             (self.image_size, self.image_size)
         )
         image_tensor: Tensor = self._image_transform(img_pil)
+        
         return image_tensor
 
     def __len__(self) -> int:

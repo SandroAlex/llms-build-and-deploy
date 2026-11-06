@@ -19,12 +19,12 @@ def center_crop(img: Image) -> Image:
 
     Parameters
     ----------
-    img : Image.Image
+    img : Image
         Image to crop, of any width and height.
 
     Returns
     -------
-    Image.Image
+    Image
         The largest square that fits in 'img', centered on it.
     """
 
