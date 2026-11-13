@@ -73,9 +73,21 @@ A self-critiquing research agent (the "Reflexion" pattern) that argues an evolut
 - **Extra dependency** — needs a Tavily API key (`langchain_community.tools.tavily_search.TavilySearchResults`) in addition to `OPENAI_API_KEY`.
 - Two debug flags (`TEST_TAVILY`, `TEST_SIMPLE_LLM`) let you sanity-check the search tool or a bare LLM call before running the full graph.
 
+### `react.py`
+
+A ReAct (Reasoning + Acting) agent built on `langgraph.StateGraph`, where the model alternates between reasoning and calling tools until it can answer:
+
+- **Tools** — `search_tool` (Tavily web search) and `recommend_clothing` (keyword-based outfit suggestions from a weather description).
+- **Shared state** — an `AgentState` `TypedDict` whose `messages` field uses the `add_messages` reducer, so each node appends to the conversation instead of overwriting it.
+- **Nodes** — `call_model_node` (`AGENTE`) invokes the prompt and tool-bound `gpt-4o-mini` model, and `tool_node` (`FERRAMENTAS`) executes every tool call from the last message and returns `ToolMessage`s.
+- **Loop control** — `should_continue` routes to the tools node while the model keeps requesting tools, and to `END` once it doesn't; tools always route back to the agent.
+- **Graph diagram** — saves a Mermaid rendering of the graph to `learning/agents/react.png`.
+- **MLflow tracing** — logs under the `"REACT AGENT"` experiment.
+- Runs as a script, streaming each step for a hardcoded question about Zurich's weather and what to wear.
+
 ## Running the examples
 
 - Set `OPENAI_API_KEY` in your environment (or `.env`, if using the project's docker-compose setup).
 - An MLflow tracking server must be reachable at the configured `MLFLOW_TRACKING_URI` for the autologging calls to succeed. Traces can be viewed in the MLflow UI at [http://localhost:5000](http://localhost:5000).
 - `youtuber.py` additionally needs the YouTube-related packages listed above and, if you hit bot-detection blocks, a cookies file as described.
-- `nutrition.py` additionally needs a `TAVILY_API_KEY` for its web search tool.
+- `nutrition.py` and `react.py` additionally need a `TAVILY_API_KEY` for their web search tool.
