@@ -265,7 +265,9 @@ workflow.set_entry_point("AGENTE")
 graph: CompiledStateGraph = workflow.compile()
 
 # Visualize the graph
-_: bytes = graph.get_graph().draw_mermaid_png(output_file_path="./learning/agents/react.png")
+_: bytes = graph.get_graph().draw_mermaid_png(
+    output_file_path="./learning/agents/react.png"
+)
 #########################################################################################
 
 # Main code
