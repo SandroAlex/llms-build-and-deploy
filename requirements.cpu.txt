@@ -6,6 +6,7 @@ aiohappyeyeballs==2.6.2
 aiohttp==3.14.1
     # via
     #   fsspec
+    #   langchain-community
     #   mlflow
 aiosignal==1.4.0
     # via aiohttp
@@ -104,6 +105,8 @@ distro==1.9.0
     # via openai
 docker==7.1.0
     # via mlflow
+duckdb==2.0.0
+    # via llmsplay
 executing==2.2.1
     # via stack-data
 fastapi==0.136.3
@@ -162,6 +165,8 @@ httpx==0.28.1
     #   langsmith
     #   ollama
     #   openai
+httpx-sse==0.4.3
+    # via langchain-community
 huey==3.0.3
     # via mlflow
 idna==3.18
@@ -255,11 +260,16 @@ kiwisolver==1.5.0
 langchain==1.3.8
     # via llmsplay
 langchain-classic==1.0.8
+    # via
+    #   langchain-community
+    #   llmsplay
+langchain-community==0.4.2
     # via llmsplay
 langchain-core==1.4.6
     # via
     #   langchain
     #   langchain-classic
+    #   langchain-community
     #   langchain-openai
     #   langchain-text-splitters
     #   langgraph
@@ -289,6 +299,7 @@ langgraph-sdk==0.4.2
 langsmith==0.8.15
     # via
     #   langchain-classic
+    #   langchain-community
     #   langchain-core
 lark==1.3.1
     # via rfc3987-syntax
@@ -352,6 +363,7 @@ notebook-shim==0.2.4
 numpy==2.4.6
     # via
     #   contourpy
+    #   langchain-community
     #   llmsplay
     #   matplotlib
     #   mlflow
@@ -482,8 +494,11 @@ pydantic==2.13.4
     #   mlflow-tracing
     #   ollama
     #   openai
+    #   pydantic-settings
 pydantic-core==2.46.4
     # via pydantic
+pydantic-settings==2.16.3
+    # via langchain-community
 pygments==2.20.0
     # via
     #   ipython
@@ -501,7 +516,9 @@ python-dateutil==2.9.0.post0
     #   matplotlib
     #   pandas
 python-dotenv==1.2.2
-    # via mlflow-skinny
+    # via
+    #   mlflow-skinny
+    #   pydantic-settings
 python-json-logger==4.1.0
     # via jupyter-events
 pytokens==0.4.1
@@ -521,6 +538,7 @@ pyyaml==6.0.3
     # via
     #   jupyter-events
     #   langchain-classic
+    #   langchain-community
     #   langchain-core
     #   lightning
     #   mlflow-skinny
@@ -543,6 +561,7 @@ requests==2.34.2
     #   docker
     #   jupyterlab-server
     #   langchain-classic
+    #   langchain-community
     #   langsmith
     #   mlflow-skinny
     #   requests-toolbelt
@@ -597,6 +616,7 @@ sqlalchemy==2.0.50
     # via
     #   alembic
     #   langchain-classic
+    #   langchain-community
     #   mlflow
 sqlparse==0.5.5
     # via mlflow-skinny
@@ -609,7 +629,9 @@ starlette==1.3.1
 sympy==1.14.0
     # via torch
 tenacity==9.1.4
-    # via langchain-core
+    # via
+    #   langchain-community
+    #   langchain-core
 terminado==0.18.1
     # via
     #   jupyter-server
@@ -697,6 +719,7 @@ typing-extensions==4.15.0
     #   opentelemetry-semantic-conventions
     #   pydantic
     #   pydantic-core
+    #   pydantic-settings
     #   pytorch-lightning
     #   referencing
     #   sqlalchemy
@@ -707,6 +730,7 @@ typing-inspection==0.4.2
     # via
     #   fastapi
     #   pydantic
+    #   pydantic-settings
 tzdata==2026.2
     # via
     #   arrow

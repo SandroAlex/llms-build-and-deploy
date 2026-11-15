@@ -16,6 +16,7 @@ dependencies = [
     "pandas==2.3.3",
     "scikit-learn==1.9.0",
     "tiktoken==0.13.0",
+    "duckdb==2.0.0",
 ]
 
 [dependency-groups]
